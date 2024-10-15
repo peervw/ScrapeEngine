@@ -1,0 +1,10 @@
+198.23.239.134:6540:lfnnfswe:2zna5a93lyeg
+207.244.217.165:6712:lfnnfswe:2zna5a93lyeg
+107.172.163.27:6543:lfnnfswe:2zna5a93lyeg
+173.211.0.148:6641:lfnnfswe:2zna5a93lyeg
+161.123.152.115:6360:lfnnfswe:2zna5a93lyeg
+216.10.27.159:6837:lfnnfswe:2zna5a93lyeg
+167.160.180.203:6754:lfnnfswe:2zna5a93lyeg
+154.36.110.199:6853:lfnnfswe:2zna5a93lyeg
+173.0.9.70:5653:lfnnfswe:2zna5a93lyeg
+173.0.9.209:5792:lfnnfswe:2zna5a93lyeg
