@@ -1,1 +1,6 @@
-flask
+fastapi
+uvicorn
+pydantic
+cachetools
+requests
+dotenv

@@ -1,7 +1,6 @@
-import os
 import logging
 import requests
-import json
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -25,7 +24,7 @@ def read_data_from_file(filename):
                         "username": parts[2],
                         "password": parts[3]
                     })
-                if len(parts) == 3:
+                elif len(parts) == 3:
                     logger.debug(f"Parsed data - URL: {parts[0]}, Username: {parts[1]}, Password: {parts[2]}")
                     data_list.append({
                         "url": parts[0],
@@ -39,7 +38,7 @@ def read_data_from_file(filename):
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
     
-    return json.dumps(data_list, indent=4)
+    return data_list
 
 # Proxy manager
 def import_proxies():
@@ -86,17 +85,12 @@ def get_next_proxy():
 
 ##### Scrape
 
-def scrape(args):
-    """
-    Scrape functions that takes in args and performs scraping using scraper network.
-    Args should include:
-    - 'url': The target URL to which we want to send a request.
-    - 'link_or_article': A string that specifies whether links or the complete content should be scraped.
-    - 'credentials': A dictionary containing 'url', 'username', 'password' for the scraper endpoint.
-    - 'proxies': A dictionary containing 'url', 'username', 'password' for the proxy connection.
+from requests.exceptions import HTTPError, Timeout, ConnectionError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-    The scraper will use these credentials to make an authenticated GET request to the provided URL.
-    """
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
+def scrape(args):
     logger.info("Scraper started")
 
     # Extracting arguments
@@ -105,42 +99,94 @@ def scrape(args):
     proxy = args.get('proxy')
     link_or_article = args.get('link_or_article')
 
+    # Validate input arguments
     if not target_url or not scraper:
         error_message = "Invalid arguments provided to scraper. 'url' and 'credentials' are required."
         logger.error(error_message)
-        return {"error": error_message}
+        return {
+            "status": "failure",
+            "error": error_message
+        }
     
-    if link_or_article == 'article':
-        request_url = f"{scraper["url"]}?url={target_url}&stealth=true&cache=false&full-content=yes&proxy-server={proxy["ip"]}:{proxy["port"]}&proxy-username={proxy["username"]}&proxy-password={proxy["password"]}"
-    elif link_or_article == 'link':
-        request_url = f"{scraper["url"]}?url={target_url}&stealth=true&cache=false&proxy-server={proxy["ip"]}:{proxy["port"]}&proxy-username={proxy["username"]}&proxy-password={proxy["password"]}"
-    else:
-        error_message = "Invalid arguments provided to scraper. 'link_or_article' must be either 'link' or 'article'."
-        logger.error(error_message)
-        return {"error": error_message}
-    
+    request_url = construct_request_url(scraper, target_url, link_or_article, proxy)
+
     try:
         logger.info(f"Making GET request to {target_url} using {request_url}")
         response = requests.get(
             request_url,
             auth=(scraper['username'], scraper['password']),
-            timeout=10
+            timeout=30
         )
         response.raise_for_status()
         logger.info(f"Successfully fetched data from {request_url}")
         return {
             "used_scraper": scraper['url'],
-            "used_proxy": proxy['url'],
+            "scraper_credentials": scraper,
+            "used_proxy": f"{proxy[0]}:{proxy[1]}",
             "status": "success",
+            "timestamp": time.time(),
+            "url": target_url,
             "data": response.text
         }
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch data from {target_url} using {scraper['url']}: {str(e)}")
+    except HTTPError as e:
+        logger.error(f"HTTP error occurred while fetching data: {e}")
         return {
-            "credential_url": scraper['url'],
+            "used_scraper": scraper,
+            "used_proxy": proxy,
             "status": "failure",
-            "error": str(e)
+            "timestamp": time.time(),
+            "url": target_url,
+            "request_url": request_url,
+            "error": f"HTTP error: {str(e)}"
         }
+    except Timeout as e:
+        logger.error(f"Request timed out for URL: {target_url} using {request_url}: {e}")
+        return {
+            "used_scraper": scraper,
+            "used_proxy": proxy,
+            "status": "failure",
+            "timestamp": time.time(),
+            "url": target_url,
+            "request_url": request_url,
+            "error": f"Request timed out: {str(e)}"
+        }
+    except ConnectionError as e:
+        logger.error(f"Connection error while trying to reach {target_url} using {request_url}: {e}")
+        return {
+            "used_scraper": scraper,
+            "used_proxy": proxy,
+            "status": "failure",
+            "timestamp": time.time(),
+            "url": target_url,
+            "request_url": request_url,
+            "error": f"Connection error: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"An unexpected error occurred: {str(e)}")
+        return {
+            "used_scraper": scraper,
+            "used_proxy": proxy,
+            "status": "failure",
+            "timestamp": time.time(),
+            "url": target_url,
+            "request_url": request_url,
+            "error": f"Unexpected error: {str(e)}"
+        }
+
+
+def construct_request_url(scraper, target_url, link_or_article, proxy):
+    if link_or_article == 'article':
+        base_url = f"http://{scraper['url']}/api/article?url={target_url}&stealth=true&cache=false"
+    elif link_or_article == 'link':
+        base_url = f"http://{scraper['url']}/api/links?url={target_url}&stealth=true&cache=false"
+    proxy_part = f"&proxy-server={proxy[0]}:{proxy[1]}&proxy-username={proxy[2]}&proxy-password={proxy[3]}"
+    if link_or_article == 'article':
+        return f"{base_url}&full-content=yes{proxy_part}"
+    elif link_or_article == 'link':
+        return f"{base_url}{proxy_part}"
+    else:
+        raise ValueError("'link_or_article' must be either 'link' or 'article'")
+
 
 if __name__ == '__main__':
     pass
