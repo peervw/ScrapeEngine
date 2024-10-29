@@ -4,3 +4,4 @@ pydantic
 cachetools
 requests
 python-dotenv
+tenacity

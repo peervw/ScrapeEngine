@@ -1,6 +1,8 @@
 import logging
 import requests
 import time
+from requests.exceptions import HTTPError, Timeout, ConnectionError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -84,9 +86,6 @@ def get_next_proxy():
     return ProxyManager().get_next_proxy()
 
 ##### Scrape
-
-from requests.exceptions import HTTPError, Timeout, ConnectionError
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
