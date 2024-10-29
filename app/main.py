@@ -47,6 +47,8 @@ def token_required(authorization: Optional[str] = Header(None)):
 class ScrapeRequest(BaseModel):
     url: str
     link_or_article: Optional[str] = "article"
+    if link_or_article not in ["link", "article"]:
+        raise ValueError("link_or_article must be either 'link', 'article' or empty")
     other_params: Optional[dict] = None  # Add other expected fields here if needed
 
 async def route_to_scraper(args):
