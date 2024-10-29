@@ -120,9 +120,8 @@ def scrape(args):
         response.raise_for_status()
         logger.info(f"Successfully fetched data from {request_url}")
         return {
-            "used_scraper": scraper['url'],
-            "scraper_credentials": scraper,
-            "used_proxy": f"{proxy[0]}:{proxy[1]}",
+            "used_scraper": scraper,
+            "used_proxy": proxy,
             "status": "success",
             "timestamp": time.time(),
             "url": target_url,
