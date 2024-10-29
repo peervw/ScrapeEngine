@@ -3,4 +3,4 @@ uvicorn
 pydantic
 cachetools
 requests
-dotenv
+python-dotenv
