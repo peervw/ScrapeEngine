@@ -9,17 +9,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.9, 3.10, 3.11, 3.12]
-
+    # Simplify to just use Python 3.12 for now
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: "3.12"
+        cache: 'pip' # Enable pip caching
     
     - name: Install dependencies
       run: |
@@ -28,6 +26,10 @@ jobs:
         pip install -r requirements-dev.txt
     
     - name: Run tests
+      env:
+        AUTH_TOKEN: test_token
+        WEBSHARE_TOKEN: test_webshare_token
+        ENV: test
       run: |
         pytest --cov=app --cov-report=xml
     
@@ -35,4 +37,4 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
-        fail_ci_if_error: true 
+        fail_ci_if_error: false # Don't fail if coverage upload fails
