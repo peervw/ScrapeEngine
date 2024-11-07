@@ -2,8 +2,8 @@ from fastapi import FastAPI, HTTPException, Request, Header, Depends
 from fastapi.responses import JSONResponse
 import os
 import logging
-from functions import *
-from webshare_proxy import *
+from .functions import *
+from .webshare_proxy import *
 import threading
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -13,6 +13,8 @@ import random
 from pydantic import BaseModel, ValidationError
 from functools import lru_cache
 import cachetools
+from fastapi.openapi.utils import get_openapi
+from .config import Settings, get_settings
 
 app = FastAPI()
 stop_event = asyncio.Event()
@@ -39,10 +41,13 @@ else:
 credentials_index = 0
 credentials_lock = asyncio.Lock()  # To safely access the shared credentials index
 
-def token_required(authorization: Optional[str] = Header(None)):
-    if not authorization or authorization not in API_TOKEN:
-        logger.warning("Unauthorized access attempt.")
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing token.")
+def token_required(
+    authorization: Optional[str] = Header(None),
+    settings: Settings = Depends(get_settings)
+):
+    if not authorization or authorization not in settings.AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return authorization
 
 class ScrapeRequest(BaseModel):
     url: str
@@ -147,6 +152,20 @@ async def main_proxy_updater():
         except Exception as e:
             logging.error(f"An error occurred in proxy_updater: {str(e)}")
         await asyncio.sleep(3600)
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="CaseAlpha ScrapeEngine API",
+        version="1.0.0",
+        description="A robust web scraping service with proxy management",
+        routes=app.routes,
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 if __name__ == '__main__':
     # Start the proxy updater thread

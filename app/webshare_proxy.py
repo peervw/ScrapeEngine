@@ -1,21 +1,17 @@
 import requests
-import dotenv
-import os
+from app.config import get_settings
 import logging
-
-dotenv.load_dotenv("app/.env")
-
-logging.basicConfig(level=logging.INFO)
+import os
 
 def master_webshare_get_proxies():
     """
     Get the list of proxies from the Webshare API and save them to a file
     """
+    settings = get_settings()
     try:
-        TOKEN = os.getenv("WEBSHARE_TOKEN")
         response = requests.get(
             "https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=1000",
-            headers={"Authorization": "Token " + TOKEN}
+            headers={"Authorization": f"Token {settings.WEBSHARE_TOKEN}"}
         )
         data = response.json()
         

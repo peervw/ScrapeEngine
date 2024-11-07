@@ -3,6 +3,9 @@ import requests
 import time
 from requests.exceptions import HTTPError, Timeout, ConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
+from pydantic import BaseModel, validator
+from typing import Optional, Literal
+import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -87,7 +90,6 @@ def get_next_proxy():
 
 ##### Scrape
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
 def scrape(args):
     logger.info("Scraper started")
@@ -184,6 +186,18 @@ def construct_request_url(scraper, target_url, link_or_article, proxy):
         return f"{base_url}{proxy_part}"
     else:
         raise ValueError("'link_or_article' must be either 'link' or 'article'")
+
+
+class ScrapeRequest(BaseModel):
+    url: str
+    link_or_article: Optional[Literal["link", "article"]] = "article"
+    other_params: Optional[dict] = None
+
+    @validator('url')
+    def validate_url(cls, v):
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('URL must start with http:// or https://')
+        return v
 
 
 if __name__ == '__main__':

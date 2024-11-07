@@ -5,3 +5,4 @@ cachetools
 requests
 python-dotenv
 tenacity
+pydantic-settings==2.1.0
