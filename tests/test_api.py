@@ -24,8 +24,9 @@ def test_unauthorized_access(client):
     response = client.post("/api/scrape", json={"url": "https://example.com"})
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-def test_scrape_endpoint_success(client, auth_headers, mocker):
-    # Mock the scrape function to return a valid response
+@pytest.mark.asyncio
+async def test_scrape_endpoint_success(client, auth_headers, mocker):
+    # Mock both scrape and route_to_scraper
     mock_response = {
         "status": "success",
         "data": "<html></html>",
@@ -35,6 +36,7 @@ def test_scrape_endpoint_success(client, auth_headers, mocker):
         "used_proxy": ("127.0.0.1", "8080", "user", "pass")
     }
     mocker.patch('app.functions.scrape', return_value=mock_response)
+    mocker.patch('app.main.route_to_scraper', return_value=mock_response)
 
     response = client.post(
         "/api/scrape",
@@ -44,7 +46,12 @@ def test_scrape_endpoint_success(client, auth_headers, mocker):
         },
         headers=auth_headers
     )
-    assert response.status_code == status.HTTP_200_OK
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "data" in data
+    assert data["url"] == "https://example.com"
 
 def test_invalid_url_format(client, auth_headers):
     response = client.post(
