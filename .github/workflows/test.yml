@@ -9,7 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # Simplify to just use Python 3.12 for now
     steps:
     - uses: actions/checkout@v3
     
@@ -17,13 +16,19 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: "3.12"
-        cache: 'pip' # Enable pip caching
+        cache: 'pip'
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
+    
+    - name: Create test files
+      run: |
+        mkdir -p app/static
+        echo "test.example.com:user:pass" > app/static/scraper.txt
+        echo "127.0.0.1:8080:user:pass" > app/static/proxies.txt
     
     - name: Run tests
       env:
@@ -37,4 +42,4 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
-        fail_ci_if_error: false # Don't fail if coverage upload fails
+        fail_ci_if_error: false

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Header, Depends
+from fastapi import FastAPI, HTTPException, Request, Header, Depends, status
 from fastapi.responses import JSONResponse
 import os
 import logging
@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Optional
 import multiprocessing
 import random
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator, HttpUrl
 from functools import lru_cache
 import cachetools
 from fastapi.openapi.utils import get_openapi
@@ -50,13 +50,21 @@ def token_required(
     return authorization
 
 class ScrapeRequest(BaseModel):
-    url: str
+    url: HttpUrl  # This will enforce URL validation
     link_or_article: Optional[str] = "article"
-    if link_or_article not in ["link", "article"]:
-        raise ValueError("link_or_article must be either 'link', 'article' or empty")
-    other_params: Optional[dict] = None  # Add other expected fields here if needed
+    other_params: Optional[dict] = None
+
+    @field_validator('link_or_article')
+    def validate_link_or_article(cls, v):
+        if v not in ["link", "article"]:
+            raise ValueError("link_or_article must be either 'link' or 'article'")
+        return v
 
 async def route_to_scraper(args):
+    # Convert HttpUrl to string before passing to scraper
+    if 'url' in args and hasattr(args['url'], '__str__'):
+        args['url'] = str(args['url'])
+    
     global credentials_index
     async with credentials_lock:
         # Get the next set of credentials in a round-robin fashion
@@ -94,38 +102,26 @@ async def route_to_scraper(args):
 def cached_read_data_from_file(filename: str):
     return read_data_from_file(filename)
 
-@app.get('/api/scrape')
-async def scrape_endpoint(request: Request, authorization: str = Depends(token_required)):
-    # Get JSON arguments
+@app.post('/api/scrape')
+async def scrape_endpoint(
+    request: ScrapeRequest,
+    authorization: str = Depends(token_required)
+):
     try:
-        args = await request.json()
-        validated_args = ScrapeRequest(**args)
-    except ValidationError as e:
-        logger.error(f"Invalid input data: {e.json()}")
-        return JSONResponse(status_code=400, content={"error": "Invalid input data", "details": e.errors()})
-    except Exception as e:
-        logger.error(f"Failed to parse request JSON: {str(e)}")
-        return JSONResponse(status_code=400, content={"error": "Invalid request format"})
-
-    # Convert validated_args to dictionary
-    args = validated_args.dict()
-
-    # Validate that the target URL is provided
-    target_url = args.get('url')
-    if not target_url:
-        logger.error("No target URL provided in request")
-        return JSONResponse(status_code=400, content={"error": "No target URL provided"})
-
-    # Route to the next available scraper with appropriate credentials
-    try:
+        args = request.model_dump()
         result = await route_to_scraper(args)
         return JSONResponse(content=result)
-    except HTTPException as e:
-        logger.error(f"HTTP error occurred: {str(e)}")
-        return JSONResponse(status_code=e.status_code, content={"error": e.detail})
+    except ValidationError as e:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"error": str(e)}
+        )
     except Exception as e:
         logger.error(f"An error occurred while scraping: {str(e)}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": str(e)}
+        )
 
 # Route to return JSON runners data
 @app.get('/api/runners_json')
@@ -166,6 +162,16 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "uptime": get_uptime(),
+        "proxy_count": len(ProxyManager().proxies),
+        "scraper_count": len(credentials_list)
+    }
 
 if __name__ == '__main__':
     # Start the proxy updater thread

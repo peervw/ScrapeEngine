@@ -23,7 +23,9 @@ def test_webshare_proxy_success(mocker):
     mock_file().write.assert_called_with("127.0.0.1:8080:user:pass\n")
 
 def test_webshare_proxy_error(mocker):
+    # Mock the requests.get to raise an exception
     mocker.patch("requests.get", side_effect=Exception("API Error"))
     
-    with pytest.raises(Exception):
-        master_webshare_get_proxies() 
+    # Call the function and verify it returns an empty list
+    result = master_webshare_get_proxies()
+    assert result == []

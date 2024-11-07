@@ -35,6 +35,7 @@ def master_webshare_get_proxies():
                 f.write(proxy_entry)
         logging.info("Proxies saved to proxies.txt")
     except Exception as e:
-        logging.error(f"Error getting proxies: {e}")
+        logging.error(f"Error getting proxies: {str(e)}")
+        return []  # Return empty list on error
 
 master_webshare_get_proxies()

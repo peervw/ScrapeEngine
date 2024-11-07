@@ -3,20 +3,26 @@ import requests
 import time
 from requests.exceptions import HTTPError, Timeout, ConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from typing import Optional, Literal
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Add at the top of functions.py
+PROXY_FILE = 'app/static/proxies.txt'
+
 # Function to read data from the static file
 def read_data_from_file(filename):
     data_list = []
     try:
-        logger.debug(f"Attempting to open file: static/{filename}")
-        with open(f"app/static/{filename}", 'r') as file:
+        # Handle both absolute and relative paths
+        filepath = filename if os.path.isabs(filename) else os.path.join("app/static", filename)
+        logger.debug(f"Attempting to open file: {filepath}")
+        with open(filepath, 'r') as file:
             for line in file:
                 logger.debug(f"Reading line: {line.strip()}")
                 # Assuming the format in the file is: IP:Port:Username:Password
@@ -39,20 +45,21 @@ def read_data_from_file(filename):
                 else:
                     logger.warning(f"Invalid line format: {line.strip()}")
     except FileNotFoundError:
-        logger.error(f"File not found: static/{filename}")
+        logger.error(f"File not found: {filepath}")
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
     
     return data_list
 
-# Proxy manager
-def import_proxies():
-    with open('app/static/proxies.txt', 'r') as f:
-        proxies = f.readlines()
-    return [proxy.strip() for proxy in proxies]  # Remove any extra whitespace or newline characters
-
 class ProxyManager:
     _instance = None
+    _proxy_file = PROXY_FILE
+    _proxies = None
+
+    @classmethod
+    def reset_instance(cls):
+        cls._instance = None
+        cls._proxies = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -61,8 +68,18 @@ class ProxyManager:
         return cls._instance
 
     def _initialize(self):
-        self.proxies = import_proxies()
-        self.proxy_generator = self._create_proxy_generator()
+        try:
+            with open(self._proxy_file, 'r') as f:
+                self.proxies = [proxy.strip() for proxy in f.readlines()]
+            self.proxy_generator = self._create_proxy_generator()
+        except FileNotFoundError:
+            logger.error(f"Proxy file not found: {self._proxy_file}")
+            raise
+
+    @classmethod
+    def set_proxy_file(cls, file_path):
+        cls._proxy_file = file_path
+        cls.reset_instance()
 
     def _create_proxy_generator(self):
         while True:
@@ -95,7 +112,7 @@ def scrape(args):
     logger.info("Scraper started")
 
     # Extracting arguments
-    target_url = args.get('url')
+    target_url = str(args.get('url'))
     scraper = args.get('scraper_credentials')
     proxy = args.get('proxy')
     link_or_article = args.get('link_or_article')
@@ -193,7 +210,7 @@ class ScrapeRequest(BaseModel):
     link_or_article: Optional[Literal["link", "article"]] = "article"
     other_params: Optional[dict] = None
 
-    @validator('url')
+    @field_validator('url')
     def validate_url(cls, v):
         if not v.startswith(('http://', 'https://')):
             raise ValueError('URL must start with http:// or https://')
