@@ -163,6 +163,15 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+def get_uptime():
+    """Returns the system uptime in seconds"""
+    try:
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+        return uptime_seconds
+    except:
+        return 0  # Return 0 if unable to get uptime (e.g., on non-Linux systems)
+
 @app.get("/health")
 async def health_check():
     return {

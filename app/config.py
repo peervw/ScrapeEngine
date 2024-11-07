@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 import multiprocessing
 import os
+from pydantic import ConfigDict
 
 class Settings(BaseSettings):
     # Environment
@@ -27,9 +28,10 @@ class Settings(BaseSettings):
     PROXIES_FILE: str = "app/static/proxies.txt"
     SCRAPER_FILE: str = "app/static/scraper.txt"
     
-    class Config:
-        env_file = f".env.{os.getenv('ENV', 'development')}"
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=f".env.{os.getenv('ENV', 'development')}",
+        case_sensitive=True
+    )
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -4,7 +4,21 @@ from fastapi import status
 def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    
+    # Check that all required fields are present
+    assert "status" in data
+    assert "version" in data
+    assert "uptime" in data
+    assert "proxy_count" in data
+    assert "scraper_count" in data
+    
+    # Check specific values we can predict
+    assert data["status"] == "healthy"
+    assert data["version"] == "1.0.0"
+    assert isinstance(data["uptime"], (int, float))
+    assert isinstance(data["proxy_count"], int)
+    assert isinstance(data["scraper_count"], int)
 
 def test_unauthorized_access(client):
     response = client.post("/api/scrape", json={"url": "https://example.com"})
