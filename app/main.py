@@ -7,16 +7,41 @@ from .webshare_proxy import *
 import threading
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from typing import Optional
+from typing import Optional, Dict, Any
 import multiprocessing
 import random
-from pydantic import BaseModel, ValidationError, field_validator, HttpUrl
+from pydantic import BaseModel, ValidationError, field_validator, HttpUrl, Field
 from functools import lru_cache
 import cachetools
 from fastapi.openapi.utils import get_openapi
 from .config import Settings, get_settings
 
-app = FastAPI()
+app = FastAPI(
+    title="CaseAlpha ScrapeEngine API",
+    description="""
+    A robust web scraping service with the following features:
+    * Proxy rotation and management
+    * Rate limiting
+    * Automatic retries
+    * Content caching
+    * Authentication
+    """,
+    version="1.0.0",
+    openapi_tags=[
+        {
+            "name": "scraping",
+            "description": "Endpoints for web scraping operations"
+        },
+        {
+            "name": "health",
+            "description": "System health and monitoring"
+        },
+        {
+            "name": "configuration",
+            "description": "Proxy and scraper configuration endpoints"
+        }
+    ]
+)
 stop_event = asyncio.Event()
 
 # Configure logging
@@ -50,9 +75,23 @@ def token_required(
     return authorization
 
 class ScrapeRequest(BaseModel):
-    url: HttpUrl  # This will enforce URL validation
-    link_or_article: Optional[str] = "article"
-    other_params: Optional[dict] = None
+    """
+    Request model for the scraping endpoint.
+    
+    Attributes:
+        url: Target URL to scrape (must be a valid HTTP/HTTPS URL)
+        link_or_article: Type of content to scrape ('link' or 'article'), 
+        other_params: Additional parameters for the scraper
+    """
+    url: HttpUrl = Field(..., description="The URL to scrape")
+    link_or_article: Optional[str] = Field(
+        "article",
+        description="Type of content to scrape: 'link' for URLs, 'article' for content"
+    )
+    other_params: Optional[dict] = Field(
+        None,
+        description="Additional parameters to pass to the scraper"
+    )
 
     @field_validator('link_or_article')
     def validate_link_or_article(cls, v):
@@ -102,7 +141,30 @@ async def route_to_scraper(args):
 def cached_read_data_from_file(filename: str):
     return read_data_from_file(filename)
 
-@app.post('/api/scrape')
+@app.post('/api/scrape', 
+    response_model=Dict[str, Any],
+    summary="Scrape a webpage",
+    description="Scrapes content from a given URL using rotating proxies and credentials",
+    responses={
+        200: {
+            "description": "Successful scrape",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "data": "<html>...</html>",
+                        "url": "https://example.com",
+                        "timestamp": 1234567890
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid or missing authentication token"},
+        422: {"description": "Invalid request parameters"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["scraping"]
+)
 async def scrape_endpoint(
     request: ScrapeRequest,
     authorization: str = Depends(token_required)
@@ -124,7 +186,26 @@ async def scrape_endpoint(
         )
 
 # Route to return JSON runners data
-@app.get('/api/runners_json')
+@app.get('/api/runners_json', 
+    summary="Get scraper credentials",
+    description="Returns the list of scraper credentials",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "data": "['scraper1', 'scraper2', 'scraper3']"
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid or missing authentication token"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["configuration"]
+)
 async def get_runners_data(authorization: str = Depends(token_required)):
     logger.info("/api/runners_json endpoint was called")
     data = cached_read_data_from_file("scraper.txt")
@@ -132,7 +213,26 @@ async def get_runners_data(authorization: str = Depends(token_required)):
     return JSONResponse(content=data)
 
 # Route to return JSON proxy data
-@app.get('/api/proxies_json')
+@app.get('/api/proxies_json', 
+    summary="Get proxies",
+    description="Returns the list of proxies",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "data": "['proxy1', 'proxy2', 'proxy3']"
+                    }
+                }
+            }
+        },
+        401: {"description": "Invalid or missing authentication token"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["configuration"]
+)
 async def get_proxies_data(authorization: str = Depends(token_required)):
     logger.info("/api/proxies_json endpoint was called")
     data = cached_read_data_from_file("proxies.txt")
@@ -172,7 +272,7 @@ def get_uptime():
     except:
         return 0  # Return 0 if unable to get uptime (e.g., on non-Linux systems)
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
     return {
         "status": "healthy",
