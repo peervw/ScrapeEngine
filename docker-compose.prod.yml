@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  distributor:
+    build:
+      context: ./Distributor
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      - WEBSHARE_TOKEN=${WEBSHARE_TOKEN}
+      - MAX_WORKERS=4
+      - HOST=0.0.0.0
+      - PORT=8080
+      - ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  runner:
+    build:
+      context: ./Runner
+      dockerfile: Dockerfile
+    environment:
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      - DISTRIBUTOR_URL=http://distributor:8080
+      - MAX_CONCURRENT_SCRAPES=5
+      - ENV=production
+    depends_on:
+      distributor:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    driver: bridge

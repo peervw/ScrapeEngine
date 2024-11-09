@@ -1,0 +1,56 @@
+services:
+  distributor:
+    build: ./distributor
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.development
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./distributor:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/public"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - scrape_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  runner:
+    build: ./runner
+    env_file:
+      - .env.development
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=DEBUG
+      - RUNNER_ID=runner-$${HOSTNAME}
+      - DISTRIBUTOR_URL=http://distributor:8080
+    volumes:
+      - ./runner:/app
+    deploy:
+      mode: replicated
+      replicas: ${NUM_RUNNERS:-2}
+    depends_on:
+      distributor:
+        condition: service_healthy
+    networks:
+      - scrape_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  scrape_network:
+    driver: bridge

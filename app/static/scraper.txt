@@ -1,2 +1,0 @@
-scrape-one.casealpha.app:peer@von-wilcken.de:zocgir-Pajki9-nidtam
-scrape-two.casealpha.app:peer@von-wilcken.de:zocgir-Pajki9-nidtam
