@@ -12,6 +12,7 @@ class ScrapeResponse(BaseModel):
     full_content: str
     stealth: bool
     cache: bool
-    content: dict
     proxy_used: str
     runner_used: str
+    method_used: str
+    content: dict

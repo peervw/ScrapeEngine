@@ -41,8 +41,19 @@ app = FastAPI(
 )
 
 def token_required(authorization: Optional[str] = Header(None)):
-    if not authorization or authorization != os.getenv("AUTH_TOKEN"):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    if not authorization:
+        raise HTTPException(status_code=401, detail="No authorization token provided")
+    
+    try:
+        # Extract token from "Bearer <token>"
+        scheme, token = authorization.split()
+        if scheme.lower() != 'bearer':
+            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
+        if token != os.getenv("AUTH_TOKEN"):
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token format")
+    
     return authorization
 
 # Protected endpoints with authentication
@@ -73,6 +84,7 @@ async def scrape_endpoint(
                 "cache": request.cache,
                 "proxy_used": f"{proxy[0]}:{proxy[1]}",
                 "runner_used": result.get("runner_id", "unknown"),
+                "method_used": result.get("method_used", "unknown"),
                 "content": result,
             }
         except Exception as e:

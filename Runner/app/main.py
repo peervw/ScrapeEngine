@@ -6,15 +6,15 @@ import aiohttp
 import os
 import asyncio
 import logging
-from datetime import datetime
 from contextlib import asynccontextmanager
 import socket
 
 # Setup logging first
 setup_logging()
 logger = logging.getLogger(__name__)
-
-app = FastAPI(title=f"ScrapeEngine Runner {os.getenv('RUNNER_ID', 'unknown')}")
+logger.info("Environment variables:")
+logger.info(f"AUTH_TOKEN present: {bool(os.getenv('AUTH_TOKEN'))}")
+logger.info(f"DISTRIBUTOR_URL: {os.getenv('DISTRIBUTOR_URL')}")
 
 RUNNER_ID = f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
 DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_URL')
@@ -38,21 +38,35 @@ async def lifespan(app: FastAPI):
     if not registration_task.done():
         registration_task.cancel()
 
+# Create the FastAPI app AFTER defining lifespan
+app = FastAPI(
+    title=f"ScrapeEngine Runner {os.getenv('RUNNER_ID', 'unknown')}",
+    lifespan=lifespan
+)
+
 async def register_with_distributor():
-    max_retries = 30  # 5 minutes total (with 10s between retries)
+    max_retries = 30
     retry_count = 0
+    
+    if not AUTH_TOKEN:
+        logger.error("AUTH_TOKEN environment variable is not set")
+        return
+        
+    if not DISTRIBUTOR_URL:
+        logger.error("DISTRIBUTOR_URL environment variable is not set")
+        return
     
     while retry_count < max_retries:
         try:
-            # Get the actual container hostname
             container_name = os.getenv('HOSTNAME', socket.gethostname())
             runner_url = f"http://{container_name}:8000"
             logger.debug(f"Attempting to register with URL: {runner_url}")
+            logger.debug(f"Using AUTH_TOKEN: {AUTH_TOKEN[:4]}...")  # Log first 4 chars only
             
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
                     f"{DISTRIBUTOR_URL}/api/runners/register",
-                    headers={"Authorization": AUTH_TOKEN},
+                    headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
                     json={
                         "runner_id": RUNNER_ID,
                         "url": runner_url
@@ -70,12 +84,11 @@ async def register_with_distributor():
             logger.error(f"Failed to register runner: {str(e)}")
         
         retry_count += 1
-        logger.debug(f"Retry {retry_count}/{max_retries} in 10 seconds...")
-        await asyncio.sleep(10)
+        if retry_count < max_retries:
+            logger.debug(f"Retry {retry_count}/{max_retries} in 10 seconds...")
+            await asyncio.sleep(10)
     
     logger.error("Failed to register after maximum retries")
-
-app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 async def health_check():

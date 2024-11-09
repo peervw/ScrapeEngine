@@ -1,226 +1,260 @@
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Optional, Tuple
 import aiohttp
 import logging
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Browser, Page
+from playwright.async_api import async_playwright
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from aiohttp import ClientError, ClientTimeout
+import asyncio
 import random
 import json
-from tenacity import retry, stop_after_attempt, wait_exponential
-import asyncio
-import time
+from datetime import datetime
+import ssl
 
 logger = logging.getLogger(__name__)
 
-class WebScraper:
-    # Base browser configurations to build upon
-    BROWSER_BASES = {
-        'chrome': {
-            'name': 'Chrome',
-            'versions': ['120.0.0.0', '119.0.0.0', '118.0.0.0'],
-            'build_ids': ['6099', '5735', '5993', '6045'],
-        },
-        'firefox': {
-            'name': 'Firefox',
-            'versions': ['121.0', '120.0', '119.0'],
-            'build_ids': ['20231211', '20231130', '20231201'],
-        },
-        'safari': {
-            'name': 'Safari',
-            'versions': ['17.1', '17.0', '16.6'],
-            'build_ids': ['14.1.2', '14.1.1', '14.1.0'],
-        }
+# Common headers to rotate
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
+
+async def get_stealth_headers() -> Dict[str, str]:
+    """Generate randomized headers for stealth"""
+    # Enhanced headers with more randomization
+    languages = ['en-US,en;q=0.9', 'en-GB,en;q=0.9', 'en-CA,en;q=0.9']
+    platforms = ['Windows NT 10.0', 'Macintosh; Intel Mac OS X 10_15_7', 'X11; Linux x86_64']
+    encodings = ['gzip, deflate, br', 'gzip, deflate', 'br']
+    
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "Accept-Language": random.choice(languages),
+        "Accept-Encoding": random.choice(encodings),
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": random.choice(['none', 'same-origin']),
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": random.choice(['max-age=0', 'no-cache']),
+        "Platform": random.choice(platforms),
+        "Sec-CH-UA": '"Google Chrome";v="120", "Chromium";v="120", "Not=A?Brand";v="99"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": f'"{random.choice(["Windows", "macOS", "Linux"])}"',
     }
-
-    def _generate_dynamic_fingerprint(self) -> Dict[str, str]:
-        """Generate a random but realistic fingerprint for each request"""
-        # Randomly select browser type
-        browser_type = random.choice(list(self.BROWSER_BASES.keys()))
-        browser = self.BROWSER_BASES[browser_type]
+    
+    # Optionally add headers that might be None
+    if random.random() > 0.5:
+        headers["DNT"] = "1"
+    if random.random() > 0.5:
+        headers["Pragma"] = "no-cache"
+    if random.random() > 0.5:
+        headers["X-Requested-With"] = "XMLHttpRequest"
         
-        # Random device characteristics
-        is_mobile = random.random() < 0.2
-        is_mac = random.random() < 0.3
-        
-        # Generate platform-specific details
-        if is_mobile:
-            if random.random() < 0.7:  # iOS
-                platform = 'iPhone'
-                os_version = f'iOS {random.randint(14,17)}_{random.randint(0,6)}'
-                webkit_version = f'{600+random.randint(1,5)}.{random.randint(1,9)}.{random.randint(1,15)}'
-            else:  # Android
-                platform = 'Android'
-                os_version = f'{random.randint(10,14)}.0.0'
-                webkit_version = f'537.36'
-        else:
-            if is_mac:
-                platform = 'MacIntel'
-                os_version = f'10_{random.randint(14,15)}_{random.randint(0,7)}'
-            else:
-                platform = 'Win64'
-                os_version = f'10.0.{random.randint(19041,19045)}.0'
+    return headers
 
-        # Generate dynamic screen properties
-        if is_mobile:
-            width = random.choice([375, 390, 414, 428])
-            height = random.choice([667, 736, 812, 844, 896, 926])
-            pixel_ratio = random.choice([2, 3])
-        else:
-            width = random.randint(1024, 1920)
-            height = random.randint(768, 1080)
-            pixel_ratio = random.choice([1, 1.25, 1.5, 2])
-
-        return {
-            'browser': browser_type,
-            'version': random.choice(browser['versions']),
-            'build_id': random.choice(browser['build_ids']),
-            'platform': platform,
-            'os_version': os_version,
-            'webkit_version': webkit_version if is_mobile else '537.36',
-            'is_mobile': is_mobile,
-            'width': width,
-            'height': height,
-            'pixel_ratio': pixel_ratio,
-            'languages': [
-                random.choice(['en-US', 'en-GB', 'en-CA']),
-                random.choice(['en;q=0.9', 'es;q=0.8', 'fr;q=0.7'])
-            ],
-            'color_depth': random.choice([24, 30, 32]),
-            'cores': random.choice([4, 6, 8, 12, 16]),
-            'memory': random.choice([4, 8, 16, 32]),
-            'touch_points': 5 if is_mobile else 0,
-        }
-
-    async def scrape_with_aiohttp(self, url: str) -> str:
-        """Enhanced aiohttp scraping with dynamic fingerprinting"""
-        # Generate new fingerprint for each request
-        fingerprint = self._generate_dynamic_fingerprint()
-        
-        # Build user agent
-        if fingerprint['is_mobile']:
-            if 'iPhone' in fingerprint['platform']:
-                user_agent = (
-                    f'Mozilla/5.0 (iPhone; CPU {fingerprint["platform"]} OS {fingerprint["os_version"]} like Mac OS X) '
-                    f'AppleWebKit/{fingerprint["webkit_version"]} (KHTML, like Gecko) '
-                    f'Version/{fingerprint["version"]} Mobile/15E148 Safari/{fingerprint["webkit_version"]}'
-                )
-            else:
-                user_agent = (
-                    f'Mozilla/5.0 (Linux; Android {fingerprint["os_version"]}; K) '
-                    f'AppleWebKit/{fingerprint["webkit_version"]} (KHTML, like Gecko) '
-                    f'Chrome/{fingerprint["version"]} Mobile Safari/{fingerprint["webkit_version"]}'
-                )
-        else:
-            user_agent = (
-                f'Mozilla/5.0 ({fingerprint["platform"]}; '
-                f'{"Mac OS X" if "Mac" in fingerprint["platform"] else "Windows NT"} {fingerprint["os_version"]}) '
-                f'AppleWebKit/537.36 (KHTML, like Gecko) '
-                f'Chrome/{fingerprint["version"]} Safari/537.36'
-            )
-
-        # Dynamic headers based on fingerprint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=(
+        retry_if_exception_type(ClientError) |
+        retry_if_exception_type(asyncio.TimeoutError) |
+        retry_if_exception_type(Exception)
+    ),
+    before_sleep=lambda retry_state: logger.warning(
+        f"Retry attempt {retry_state.attempt_number} for URL after error: {retry_state.outcome.exception()}"
+    )
+)
+async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = False) -> str:
+    """Basic aiohttp scraping with proxy support"""
+    try:
+        # Minimal, guaranteed non-None headers
         headers = {
-            'User-Agent': user_agent,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': ','.join(fingerprint['languages']),
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Sec-CH-UA-Platform': f'"{fingerprint["platform"]}"',
-            'Sec-CH-UA-Mobile': '?1' if fingerprint['is_mobile'] else '?0',
-            'Viewport-Width': str(fingerprint['width']),
-            'DPR': str(fingerprint['pixel_ratio']),
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Cache-Control": "no-cache",
         }
-
-        if self.stealth:
-            # Add dynamic anti-bot headers
-            headers.update({
-                'DNT': str(random.randint(0, 1)),
-                'Sec-Fetch-Dest': random.choice(['document', 'empty']),
-                'Sec-Fetch-Mode': random.choice(['navigate', 'cors']),
-                'Sec-Fetch-Site': random.choice(['none', 'same-origin']),
-                'Sec-Fetch-User': '?1',
-                'X-Requested-With': 'XMLHttpRequest' if random.random() < 0.3 else None,
-                'Priority': random.choice(['u=0', 'u=1', 'u=3']),
-                'Connection': random.choice(['keep-alive', 'close']),
-            })
-
-            # Generate dynamic cookies
-            cookies = {
-                f'_id_{random.randint(100,999)}': f'{random.randbytes(16).hex()}',
-                f'_sess_{random.randint(100,999)}': f'{random.randbytes(8).hex()}',
-                '_v': f'{int(time.time()-random.randint(100000,999999))}',
-            }
-
-        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
-            if self.stealth:
-                # Random pre-request behavior
-                if random.random() < 0.3:  # 30% chance of referrer
-                    referrer = random.choice([
-                        'https://www.google.com/search?q=' + '+'.join(url.split('/')[2].split('.')),
-                        'https://duckduckgo.com/',
-                        None
-                    ])
-                    if referrer:
-                        headers['Referer'] = referrer
-                        await session.get(referrer, proxy=self.proxy_url, ssl=False)
-                        await asyncio.sleep(random.uniform(0.5, 2))
-
+        
+        # Basic timeout settings
+        timeout = ClientTimeout(
+            total=30,
+            connect=10,
+            sock_read=10
+        )
+        
+        # Clean proxy setup
+        proxy_auth = None
+        if proxy and len(proxy) == 4:
+            host, port, username, password = proxy
+            if all([host, port, username, password]):  # Ensure no None values
+                proxy_auth = aiohttp.BasicAuth(username, password)
+                proxy_url = f"http://{host}:{port}"
+            else:
+                proxy_url = None
+        else:
+            proxy_url = None
+        
+        # Basic connector with SSL disabled
+        connector = aiohttp.TCPConnector(
+            force_close=True,
+            enable_cleanup_closed=True,
+            ssl=False,
+            limit_per_host=1
+        )
+        
+        async with aiohttp.ClientSession(
+            headers=headers,
+            connector=connector,
+            timeout=timeout,
+            trust_env=True
+        ) as session:
             async with session.get(
                 url,
-                proxy=self.proxy_url,
-                headers=headers,
-                cookies=cookies if self.stealth else None,
-                timeout=aiohttp.ClientTimeout(total=30),
+                proxy=proxy_url,
+                proxy_auth=proxy_auth,
                 allow_redirects=True,
-                ssl=False if self.stealth else True,
+                max_redirects=5,
+                timeout=timeout
             ) as response:
-                content = await response.text()
+                if response.status != 200:
+                    raise ClientError(f"HTTP {response.status}")
                 
-                # Random post-request delay
-                if self.stealth:
-                    await asyncio.sleep(random.uniform(0.1, 1.0))
-                
-                return content
+                try:
+                    content = await response.text()
+                    if not content:
+                        raise ClientError("Empty response received")
+                    return content
+                except UnicodeDecodeError:
+                    raw_content = await response.read()
+                    return raw_content.decode('utf-8', errors='ignore')
+                    
+    except Exception as e:
+        logger.error(f"Scraping error for {url}: {str(e)}")
+        raise
 
-@retry(stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=4))
-async def scrape(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Main scraping function with method selection"""
-    url = str(args['url'])
-    proxy = args['proxy']
-    full_content = args['full_content']
-    stealth = args.get('stealth', False)
-    method = args.get('method', 'aiohttp')
+async def scrape_with_playwright(url: str, proxy: Optional[tuple[str, str, str, str]] = None) -> str:
+    """Advanced scraping using playwright with enhanced stealth features"""
+    async with async_playwright() as p:
+        browser_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-dev-shm-usage',
+            '--disable-infobars',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--disable-extensions',
+            '--disable-sync',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--metrics-recording-only',
+            '--mute-audio',
+            '--no-first-run',
+            '--no-default-browser-check',
+        ]
+        
+        if proxy:
+            host, port, username, password = proxy
+            browser_args.append(f'--proxy-server={host}:{port}')
+        
+        browser = await p.chromium.launch(
+            headless=True,
+            args=browser_args
+        )
+        
+        try:
+            # Enhanced context settings
+            context = await browser.new_context(
+                proxy={
+                    'server': f'{proxy[0]}:{proxy[1]}',
+                    'username': proxy[2],
+                    'password': proxy[3]
+                } if proxy else None,
+                viewport={'width': random.randint(1280, 1920), 'height': random.randint(800, 1080)},
+                user_agent=random.choice(USER_AGENTS),
+                java_script_enabled=True,
+                has_touch=random.choice([True, False]),
+                locale=random.choice(['en-US', 'en-GB', 'en-CA']),
+                timezone_id=random.choice(['America/New_York', 'Europe/London', 'Asia/Tokyo']),
+                color_scheme=random.choice(['dark', 'light']),
+                device_scale_factor=random.choice([1, 2])
+            )
+            
+            page = await context.new_page()
+            await page.goto(url, wait_until='networkidle')
+            
+            # Random delays and human-like behavior
+            await asyncio.sleep(random.uniform(1, 3))
+            
+            # Natural scrolling behavior
+            for _ in range(random.randint(2, 4)):
+                await page.evaluate(f"""
+                    window.scrollTo({{
+                        top: {random.randint(500, 1000)},
+                        behavior: 'smooth'
+                    }});
+                """)
+                await asyncio.sleep(random.uniform(1, 2))
+            
+            content = await page.content()
+            return content
+            
+        finally:
+            await browser.close()
+
+async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Main scraping function that handles both methods"""
+    url = str(task_data['url'])
+    method = task_data.get('method', 'aiohttp')
+    proxy = task_data.get('proxy')
+    stealth = task_data.get('stealth', False)
     
-    start_time = time.time()
-    scraper = WebScraper(proxy, stealth)
+    logger.info(f"Starting scrape task for {url} using {method} (stealth: {stealth})")
+    start_time = datetime.now()
+    method_used = method
     
     try:
         if method == 'playwright':
-            html = await scraper.scrape_with_playwright(url)
+            content = await scrape_with_playwright(url, proxy)
+            method_used = 'playwright'
         else:
-            html = await scraper.scrape_with_aiohttp(url)
-            
-        soup = BeautifulSoup(html, 'html.parser')
+            try:
+                content = await scrape_with_aiohttp(url, proxy, stealth=stealth)
+                method_used = 'aiohttp'
+            except Exception as e:
+                logger.warning(f"aiohttp scraping failed, falling back to playwright: {str(e)}")
+                content = await scrape_with_playwright(url, proxy)
+                method_used = 'playwright'
+        
+        # Parse content with BeautifulSoup
+        soup = BeautifulSoup(content, 'html.parser', from_encoding='utf-8')
+        
+        # Remove unwanted elements
+        for script in soup(['script', 'style']):
+            script.decompose()
         
         result = {
-            "url": url,
-            "title": soup.title.string if soup.title else None,
-            "success": True,
-            "method_used": method,
-            "stealth_mode": stealth,
-            "scrape_time": round(time.time() - start_time, 2)
+            'title': soup.title.string if soup.title else None,
+            'text_content': soup.get_text(separator=' ', strip=True),
+            'links': [{'href': a.get('href'), 'text': a.text} for a in soup.find_all('a', href=True)],
+            'status': 'success',
+            'scrape_time': (datetime.now() - start_time).total_seconds(),
+            'method_used': method_used
         }
         
-        if full_content == "yes":
-            result.update({
-                "content": html,
-                "text_content": soup.get_text(separator='\n', strip=True),
-                "meta": {
-                    tag['name']: tag['content']
-                    for tag in soup.find_all('meta', attrs={'name': True, 'content': True})
-                }
-            })
+        if task_data.get('full_content') == 'yes':
+            result['html'] = content
             
         return result
         
     except Exception as e:
-        logger.error(f"Scraping failed: {str(e)}")
-        raise
+        logger.error(f"Scraping failed for {url}: {str(e)}")
+        return {
+            'status': 'error',
+            'error': str(e),
+            'scrape_time': (datetime.now() - start_time).total_seconds()
+        }
