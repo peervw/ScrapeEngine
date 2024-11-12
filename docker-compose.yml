@@ -36,6 +36,3 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-    deploy:
-      replicas: ${NUM_RUNNERS}  # Number of replicas defined by REPLICA_COUNT
-
