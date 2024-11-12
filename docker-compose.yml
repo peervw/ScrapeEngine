@@ -4,15 +4,11 @@ services:
       context: ./Distributor
       dockerfile: Dockerfile
     ports:
-      - "8001:8080"
+      - "8080:8080"
     env_file:
       - .env.development
     environment:
       - PYTHONUNBUFFERED=1
-      - DEBUG=true
-      - HOST=0.0.0.0
-      - PORT=8080
-      - ENV=development
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/public"]
       interval: 30s
@@ -30,8 +26,6 @@ services:
       - .env.development
     environment:
       - PYTHONUNBUFFERED=1
-      - DEBUG=true
-      - LOG_LEVEL=debug
       - RUNNER_ID=runner-${HOSTNAME:-runner}
       - DISTRIBUTOR_URL=http://distributor:8080
     depends_on:
@@ -42,3 +36,6 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    deploy:
+      replicas: ${NUM_RUNNERS}  # Number of replicas defined by REPLICA_COUNT
+
