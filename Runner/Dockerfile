@@ -2,10 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including DNS utilities
 RUN apt-get update && \
     apt-get install -y \
     curl \
+    dnsutils \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \

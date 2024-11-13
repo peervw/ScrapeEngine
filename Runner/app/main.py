@@ -18,7 +18,7 @@ logger.info(f"AUTH_TOKEN present: {bool(os.getenv('AUTH_TOKEN'))}")
 logger.info(f"DISTRIBUTOR_URL: {os.getenv('DISTRIBUTOR_URL')}")
 
 RUNNER_ID = f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
-DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_URL')
+DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_INTERNAL_URL', 'http://distributor:8080')
 AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 
 @asynccontextmanager
@@ -54,7 +54,7 @@ async def register_with_distributor():
         return
         
     if not DISTRIBUTOR_URL:
-        logger.error("DISTRIBUTOR_URL environment variable is not set")
+        logger.error("DISTRIBUTOR_INTERNAL_URL environment variable is not set")
         return
     
     # Add random delay to prevent registration conflicts
@@ -64,13 +64,19 @@ async def register_with_distributor():
         try:
             # Get container ID for unique identification
             container_id = os.getenv('HOSTNAME', socket.gethostname())
-            # Use container name for internal Docker network communication
             runner_url = f"http://{container_id}:8000"
             runner_id = f"runner-{container_id}"
             
             logger.debug(f"Attempting to register with distributor at: {DISTRIBUTOR_URL}")
             logger.debug(f"Using runner URL: {runner_url}")
             logger.debug(f"Using runner_id: {runner_id}")
+            
+            # Add DNS resolution logging
+            try:
+                distributor_ip = socket.gethostbyname('distributor')
+                logger.debug(f"Resolved distributor to IP: {distributor_ip}")
+            except Exception as e:
+                logger.warning(f"Failed to resolve distributor: {e}")
             
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
@@ -91,6 +97,9 @@ async def register_with_distributor():
                 
         except Exception as e:
             logger.error(f"Failed to register runner: {str(e)}")
+            # Add more detailed error logging
+            if isinstance(e, aiohttp.ClientError):
+                logger.error(f"Connection error details: {str(e)}")
         
         retry_count += 1
         if retry_count < max_retries:
