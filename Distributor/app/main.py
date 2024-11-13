@@ -192,7 +192,7 @@ async def test_scrape(authorization: str = Depends(token_required)):
         task_data = {
             "url": "https://example.com",
             "proxy": proxy,
-            "full_content": "yes",
+            "method": "simple",
             "stealth": False,
             "cache": True
         }

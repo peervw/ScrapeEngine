@@ -21,38 +21,62 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 
-async def get_stealth_headers() -> Dict[str, str]:
-    """Generate randomized headers for stealth"""
-    # Enhanced headers with more randomization
-    languages = ['en-US,en;q=0.9', 'en-GB,en;q=0.9', 'en-CA,en;q=0.9']
-    platforms = ['Windows NT 10.0', 'Macintosh; Intel Mac OS X 10_15_7', 'X11; Linux x86_64']
-    encodings = ['gzip, deflate, br', 'gzip, deflate', 'br']
+# Add more randomized browser fingerprinting data
+BROWSER_VERSIONS = {
+    'chrome': ['120.0.0.0', '119.0.0.0', '118.0.0.0'],
+    'firefox': ['121.0', '120.0', '119.0'],
+    'safari': ['17.2', '17.1', '17.0']
+}
+
+DEVICE_MEMORY = [2, 4, 8, 16]
+HARDWARE_CONCURRENCY = [2, 4, 6, 8, 12]
+SCREEN_RESOLUTIONS = [
+    (1920, 1080), (1366, 768), (1536, 864),
+    (1440, 900), (1280, 720), (2560, 1440)
+]
+
+async def get_enhanced_stealth_headers() -> Dict[str, str]:
+    """Generate highly randomized headers for enhanced stealth"""
+    browser = random.choice(['chrome', 'firefox', 'safari'])
+    version = random.choice(BROWSER_VERSIONS[browser])
+    resolution = random.choice(SCREEN_RESOLUTIONS)
     
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-        "Accept-Language": random.choice(languages),
-        "Accept-Encoding": random.choice(encodings),
-        "Connection": "keep-alive",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": f"{random.choice(['en-US', 'en-GB', 'en-CA'])},{random.choice(['en;q=0.9', 'en;q=0.8'])}",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": random.choice(["keep-alive", "close"]),
         "Upgrade-Insecure-Requests": "1",
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": random.choice(['none', 'same-origin']),
+        "Sec-Fetch-Site": random.choice(['none', 'same-origin', 'cross-site']),
         "Sec-Fetch-User": "?1",
-        "Cache-Control": random.choice(['max-age=0', 'no-cache']),
-        "Platform": random.choice(platforms),
-        "Sec-CH-UA": '"Google Chrome";v="120", "Chromium";v="120", "Not=A?Brand";v="99"',
-        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA": f'"Not A(Brand";v="99", "{browser}";v="{version}"',
+        "Sec-CH-UA-Mobile": random.choice(["?0", "?1"]),
         "Sec-CH-UA-Platform": f'"{random.choice(["Windows", "macOS", "Linux"])}"',
+        "Sec-CH-UA-Arch": random.choice(["x86", "arm"]),
+        "Sec-CH-UA-Full-Version": version,
+        "Sec-CH-UA-Platform-Version": random.choice(["10.0.0", "11.0.0", "12.0.0"]),
+        "Sec-CH-UA-Model": "",
+        "Sec-CH-Device-Memory": f"{random.choice(DEVICE_MEMORY)}",
+        "Sec-CH-UA-Bitness": random.choice(["64", "32"]),
+        "Device-Memory": f"{random.choice(DEVICE_MEMORY)}",
+        "Viewport-Width": f"{resolution[0]}",
+        "DPR": random.choice(["1", "2", "3"]),
+        "Hardware-Concurrency": f"{random.choice(HARDWARE_CONCURRENCY)}",
+        "RTT": f"{random.randint(50, 150)}",
+        "Downlink": f"{random.randint(5, 15)}",
+        "ECT": random.choice(["4g", "3g"]),
     }
     
-    # Optionally add headers that might be None
+    # Add random additional headers
     if random.random() > 0.5:
         headers["DNT"] = "1"
     if random.random() > 0.5:
-        headers["Pragma"] = "no-cache"
+        headers["Save-Data"] = random.choice(["on", "off"])
     if random.random() > 0.5:
-        headers["X-Requested-With"] = "XMLHttpRequest"
+        headers["Pragma"] = random.choice(["no-cache", "max-age=0"])
         
     return headers
 
@@ -68,45 +92,39 @@ async def get_stealth_headers() -> Dict[str, str]:
         f"Retry attempt {retry_state.attempt_number} for URL after error: {retry_state.outcome.exception()}"
     )
 )
-async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = False) -> str:
-    """Basic aiohttp scraping with proxy support"""
+async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
+    """Enhanced stealth aiohttp scraping with proxy support"""
     try:
-        # Minimal, guaranteed non-None headers
-        headers = {
-            "User-Agent": random.choice(USER_AGENTS),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-            "Cache-Control": "no-cache",
-        }
+        # Get enhanced stealth headers
+        headers = await get_enhanced_stealth_headers()
         
-        # Basic timeout settings
+        # Randomized timeout settings
         timeout = ClientTimeout(
-            total=30,
-            connect=10,
-            sock_read=10
+            total=random.uniform(20, 40),
+            connect=random.uniform(5, 15),
+            sock_read=random.uniform(5, 15)
         )
         
-        # Clean proxy setup
-        proxy_auth = None
-        if proxy and len(proxy) == 4:
-            host, port, username, password = proxy
-            if all([host, port, username, password]):  # Ensure no None values
-                proxy_auth = aiohttp.BasicAuth(username, password)
-                proxy_url = f"http://{host}:{port}"
-            else:
-                proxy_url = None
-        else:
-            proxy_url = None
-        
-        # Basic connector with SSL disabled
+        # Enhanced connector settings
         connector = aiohttp.TCPConnector(
             force_close=True,
             enable_cleanup_closed=True,
             ssl=False,
-            limit_per_host=1
+            limit_per_host=1,
+            ttl_dns_cache=300,
+            use_dns_cache=False
         )
+        
+        # Process proxy with random timing
+        proxy_url, proxy_auth = None, None
+        if proxy and len(proxy) == 4:
+            host, port, username, password = proxy
+            if all([host, port, username, password]):
+                proxy_auth = aiohttp.BasicAuth(username, password)
+                proxy_url = f"http://{host}:{port}"
+        
+        # Random delay before request
+        await asyncio.sleep(random.uniform(0.5, 2))
         
         async with aiohttp.ClientSession(
             headers=headers,
@@ -114,16 +132,23 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
             timeout=timeout,
             trust_env=True
         ) as session:
+            # Random delay between session creation and request
+            await asyncio.sleep(random.uniform(0.1, 0.5))
+            
             async with session.get(
                 url,
                 proxy=proxy_url,
                 proxy_auth=proxy_auth,
                 allow_redirects=True,
                 max_redirects=5,
-                timeout=timeout
+                timeout=timeout,
+                verify_ssl=False
             ) as response:
                 if response.status != 200:
                     raise ClientError(f"HTTP {response.status}")
+                
+                # Random delay before reading content
+                await asyncio.sleep(random.uniform(0.1, 0.3))
                 
                 try:
                     content = await response.text()
@@ -138,97 +163,175 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
         logger.error(f"Scraping error for {url}: {str(e)}")
         raise
 
-async def scrape_with_playwright(url: str, proxy: Optional[tuple[str, str, str, str]] = None) -> str:
-    """Advanced scraping using playwright with enhanced stealth features"""
-    async with async_playwright() as p:
-        browser_args = [
-            '--disable-blink-features=AutomationControlled',
-            '--disable-dev-shm-usage',
-            '--disable-infobars',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--disable-extensions',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--metrics-recording-only',
-            '--mute-audio',
-            '--no-first-run',
-            '--no-default-browser-check',
-        ]
-        
-        if proxy:
-            host, port, username, password = proxy
-            browser_args.append(f'--proxy-server={host}:{port}')
-        
-        browser = await p.chromium.launch(
-            headless=True,
-            args=browser_args
-        )
+async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str, str]] = None):
+    """Configure a stealth browser instance with Playwright"""
+    # Random browser selection (weighted towards Chrome)
+    browser_type = random.choices(
+        ['chromium', 'firefox', 'webkit'],
+        weights=[0.7, 0.2, 0.1]
+    )[0]
+    
+    # Random device specifications
+    resolution = random.choice(SCREEN_RESOLUTIONS)
+    device_memory = random.choice(DEVICE_MEMORY)
+    hardware_concurrency = random.choice(HARDWARE_CONCURRENCY)
+    
+    # Browser launch arguments
+    browser_args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-infobars',
+        '--window-position=0,0',
+        f'--window-size={resolution[0]},{resolution[1]}',
+        '--ignore-certifcate-errors',
+        '--ignore-certifcate-errors-spki-list',
+        f'--device-memory={device_memory}',
+        f'--cpu-count={hardware_concurrency}',
+    ]
+    
+    # Proxy configuration
+    proxy_settings = None
+    if proxy and len(proxy) == 4:
+        host, port, username, password = proxy
+        if all([host, port, username, password]):
+            proxy_settings = {
+                "server": f"http://{host}:{port}",
+                "username": username,
+                "password": password
+            }
+    
+    # Launch browser with stealth settings
+    browser = await getattr(playwright, browser_type).launch(
+        headless=True,
+        args=browser_args,
+        proxy=proxy_settings,
+        firefox_user_prefs={
+            "media.navigator.streams.fake": True,
+            "dom.webdriver.enabled": False,
+        } if browser_type == 'firefox' else None
+    )
+    
+    # Create context with enhanced stealth
+    context = await browser.new_context(
+        viewport={'width': resolution[0], 'height': resolution[1]},
+        user_agent=random.choice(USER_AGENTS),
+        locale=random.choice(['en-US', 'en-GB', 'en-CA']),
+        timezone_id=random.choice([
+            'America/New_York', 'Europe/London', 'Asia/Tokyo',
+            'Australia/Sydney', 'Europe/Paris'
+        ]),
+        permissions=['geolocation'],
+        geolocation={
+            'latitude': random.uniform(30, 50),
+            'longitude': random.uniform(-120, -70)
+        },
+        color_scheme=random.choice(['light', 'dark']),
+        reduced_motion=random.choice(['reduce', 'no-preference']),
+        forced_colors=random.choice(['none', 'active']),
+        device_scale_factor=random.choice([1, 2]),
+        is_mobile=random.random() < 0.1,  # 10% chance of mobile
+        has_touch=random.random() < 0.2,  # 20% chance of touch
+        javascript_enabled=True,
+    )
+    
+    # Additional stealth configurations
+    await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+        });
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [
+                { name: 'Chrome PDF Plugin' },
+                { name: 'Chrome PDF Viewer' },
+                { name: 'Native Client' }
+            ],
+        });
+        window.chrome = {
+            runtime: {},
+        };
+    """)
+    
+    return browser, context
+
+async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, str]] = None) -> str:
+    """Enhanced stealth Playwright scraping"""
+    async with async_playwright() as playwright:
+        browser, context = await setup_stealth_browser(playwright, proxy)
         
         try:
-            # Enhanced context settings
-            context = await browser.new_context(
-                proxy={
-                    'server': f'{proxy[0]}:{proxy[1]}',
-                    'username': proxy[2],
-                    'password': proxy[3]
-                } if proxy else None,
-                viewport={'width': random.randint(1280, 1920), 'height': random.randint(800, 1080)},
-                user_agent=random.choice(USER_AGENTS),
-                java_script_enabled=True,
-                has_touch=random.choice([True, False]),
-                locale=random.choice(['en-US', 'en-GB', 'en-CA']),
-                timezone_id=random.choice(['America/New_York', 'Europe/London', 'Asia/Tokyo']),
-                color_scheme=random.choice(['dark', 'light']),
-                device_scale_factor=random.choice([1, 2])
-            )
-            
+            # Create new page
             page = await context.new_page()
-            await page.goto(url, wait_until='networkidle')
             
-            # Random delays and human-like behavior
+            # Randomize navigation behavior
+            await page.set_default_navigation_timeout(random.randint(30000, 60000))
+            await page.set_default_timeout(random.randint(30000, 60000))
+            
+            # Random delay before navigation
             await asyncio.sleep(random.uniform(1, 3))
             
-            # Natural scrolling behavior
-            for _ in range(random.randint(2, 4)):
-                await page.evaluate(f"""
-                    window.scrollTo({{
-                        top: {random.randint(500, 1000)},
+            # Navigate with stealth patterns
+            response = await page.goto(
+                url,
+                wait_until=random.choice([
+                    'domcontentloaded',
+                    'networkidle',
+                    'load'
+                ])
+            )
+            
+            if not response.ok:
+                raise Exception(f"HTTP {response.status}")
+                
+            # Random scroll behavior
+            if random.random() < 0.7:  # 70% chance to scroll
+                await page.evaluate("""
+                    window.scrollTo({
+                        top: document.body.scrollHeight * Math.random(),
                         behavior: 'smooth'
-                    }});
+                    });
                 """)
-                await asyncio.sleep(random.uniform(1, 2))
+                await asyncio.sleep(random.uniform(0.5, 2))
+            
+            # Random delay before content extraction
+            await asyncio.sleep(random.uniform(0.5, 1.5))
             
             content = await page.content()
+            
+            # Random delay before closing
+            await asyncio.sleep(random.uniform(0.3, 1))
+            
             return content
             
+        except Exception as e:
+            logger.error(f"Playwright scraping error: {str(e)}")
+            raise
         finally:
+            await context.close()
             await browser.close()
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Main scraping function that handles both methods"""
     url = str(task_data['url'])
-    method = task_data.get('method', 'aiohttp')
+    method = task_data.get('method', 'simple')
     proxy = task_data.get('proxy')
-    stealth = task_data.get('stealth', False)
+    stealth = task_data.get('stealth', True)
     
     logger.info(f"Starting scrape task for {url} using {method} (stealth: {stealth})")
     start_time = datetime.now()
     method_used = method
     
     try:
-        if method == 'playwright':
+        if method == 'advanced':
             content = await scrape_with_playwright(url, proxy)
-            method_used = 'playwright'
+            method_used = 'advanced (playwright)'
         else:
             try:
                 content = await scrape_with_aiohttp(url, proxy, stealth=stealth)
-                method_used = 'aiohttp'
+                method_used = 'simple (aiohttp)'
             except Exception as e:
                 logger.warning(f"aiohttp scraping failed, falling back to playwright: {str(e)}")
                 content = await scrape_with_playwright(url, proxy)
-                method_used = 'playwright'
+                method_used = 'Fallback: advanced (playwright)'
         
         # Parse content with BeautifulSoup
         soup = BeautifulSoup(content, 'html.parser', from_encoding='utf-8')
