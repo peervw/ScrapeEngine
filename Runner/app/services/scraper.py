@@ -198,11 +198,12 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
         soup = BeautifulSoup(content, 'html.parser')
         
         result = {
-            'title': soup.title.string if soup.title else None,
-            'text_content': soup.get_text(separator=' ', strip=True),
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
-            'method_used': method_used
+            'method_used': method_used,
+            'title': soup.title.string if soup.title else None,
+            'text_content': soup.get_text(separator=' ', strip=True),
+            'links': [{'href': a.get('href'), 'text': a.text} for a in soup.find_all('a', href=True)]
         }
         
         if task_data.get('full_content') == 'yes':
