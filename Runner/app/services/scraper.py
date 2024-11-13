@@ -35,49 +35,28 @@ SCREEN_RESOLUTIONS = [
     (1440, 900), (1280, 720), (2560, 1440)
 ]
 
+# Optimize constants for faster performance
+MINIMAL_DELAY = 0.1  # Reduced from 0.5
+MAX_DELAY = 0.5     # Reduced from 2.0
+
 async def get_enhanced_stealth_headers() -> Dict[str, str]:
-    """Generate highly randomized headers for enhanced stealth"""
-    browser = random.choice(['chrome', 'firefox', 'safari'])
-    version = random.choice(BROWSER_VERSIONS[browser])
-    resolution = random.choice(SCREEN_RESOLUTIONS)
-    
+    """Optimized stealth headers - only essential ones"""
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": f"{random.choice(['en-US', 'en-GB', 'en-CA'])},{random.choice(['en;q=0.9', 'en;q=0.8'])}",
+        "Accept-Language": f"{random.choice(['en-US', 'en-GB', 'en-CA'])},en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
-        "Connection": random.choice(["keep-alive", "close"]),
-        "Upgrade-Insecure-Requests": "1",
+        "Connection": "keep-alive",
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": random.choice(['none', 'same-origin', 'cross-site']),
-        "Sec-Fetch-User": "?1",
-        "Sec-CH-UA": f'"Not A(Brand";v="99", "{browser}";v="{version}"',
-        "Sec-CH-UA-Mobile": random.choice(["?0", "?1"]),
+        "Sec-Fetch-Site": random.choice(['none', 'same-origin']),
         "Sec-CH-UA-Platform": f'"{random.choice(["Windows", "macOS", "Linux"])}"',
-        "Sec-CH-UA-Arch": random.choice(["x86", "arm"]),
-        "Sec-CH-UA-Full-Version": version,
-        "Sec-CH-UA-Platform-Version": random.choice(["10.0.0", "11.0.0", "12.0.0"]),
-        "Sec-CH-UA-Model": "",
-        "Sec-CH-Device-Memory": f"{random.choice(DEVICE_MEMORY)}",
-        "Sec-CH-UA-Bitness": random.choice(["64", "32"]),
-        "Device-Memory": f"{random.choice(DEVICE_MEMORY)}",
-        "Viewport-Width": f"{resolution[0]}",
-        "DPR": random.choice(["1", "2", "3"]),
-        "Hardware-Concurrency": f"{random.choice(HARDWARE_CONCURRENCY)}",
-        "RTT": f"{random.randint(50, 150)}",
-        "Downlink": f"{random.randint(5, 15)}",
-        "ECT": random.choice(["4g", "3g"]),
     }
     
-    # Add random additional headers
+    # Add only high-impact random headers
     if random.random() > 0.5:
         headers["DNT"] = "1"
-    if random.random() > 0.5:
-        headers["Save-Data"] = random.choice(["on", "off"])
-    if random.random() > 0.5:
-        headers["Pragma"] = random.choice(["no-cache", "max-age=0"])
-        
+    
     return headers
 
 @retry(
@@ -93,38 +72,27 @@ async def get_enhanced_stealth_headers() -> Dict[str, str]:
     )
 )
 async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
-    """Enhanced stealth aiohttp scraping with proxy support"""
+    """Performance-optimized aiohttp scraping"""
     try:
-        # Get enhanced stealth headers
         headers = await get_enhanced_stealth_headers()
         
-        # Randomized timeout settings
+        # Optimized timeout settings
         timeout = ClientTimeout(
-            total=random.uniform(20, 40),
-            connect=random.uniform(5, 15),
-            sock_read=random.uniform(5, 15)
+            total=15,          # Reduced from 30
+            connect=5,         # Reduced from 10
+            sock_read=10
         )
         
-        # Enhanced connector settings
         connector = aiohttp.TCPConnector(
             force_close=True,
             enable_cleanup_closed=True,
             ssl=False,
-            limit_per_host=1,
-            ttl_dns_cache=300,
-            use_dns_cache=False
+            limit_per_host=2,  # Increased from 1 for better performance
+            use_dns_cache=True # Enable DNS cache
         )
         
-        # Process proxy with random timing
-        proxy_url, proxy_auth = None, None
-        if proxy and len(proxy) == 4:
-            host, port, username, password = proxy
-            if all([host, port, username, password]):
-                proxy_auth = aiohttp.BasicAuth(username, password)
-                proxy_url = f"http://{host}:{port}"
-        
-        # Random delay before request
-        await asyncio.sleep(random.uniform(0.5, 2))
+        # Minimal delay
+        await asyncio.sleep(MINIMAL_DELAY)
         
         async with aiohttp.ClientSession(
             headers=headers,
@@ -132,218 +100,106 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
             timeout=timeout,
             trust_env=True
         ) as session:
-            # Random delay between session creation and request
-            await asyncio.sleep(random.uniform(0.1, 0.5))
-            
             async with session.get(
                 url,
-                proxy=proxy_url,
-                proxy_auth=proxy_auth,
+                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
+                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
                 allow_redirects=True,
-                max_redirects=5,
-                timeout=timeout,
-                verify_ssl=False
+                max_redirects=3,  # Reduced from 5
+                timeout=timeout
             ) as response:
                 if response.status != 200:
                     raise ClientError(f"HTTP {response.status}")
                 
-                # Random delay before reading content
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                
-                try:
-                    content = await response.text()
-                    if not content:
-                        raise ClientError("Empty response received")
-                    return content
-                except UnicodeDecodeError:
-                    raw_content = await response.read()
-                    return raw_content.decode('utf-8', errors='ignore')
+                return await response.text()
                     
     except Exception as e:
         logger.error(f"Scraping error for {url}: {str(e)}")
         raise
 
 async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str, str]] = None):
-    """Configure a stealth browser instance with Playwright"""
-    # Random browser selection (weighted towards Chrome)
-    browser_type = random.choices(
-        ['chromium', 'firefox', 'webkit'],
-        weights=[0.7, 0.2, 0.1]
-    )[0]
+    """Performance-optimized Playwright setup"""
+    browser_type = 'chromium'  # Stick to chromium for consistency and speed
     
-    # Random device specifications
-    resolution = random.choice(SCREEN_RESOLUTIONS)
-    device_memory = random.choice(DEVICE_MEMORY)
-    hardware_concurrency = random.choice(HARDWARE_CONCURRENCY)
-    
-    # Browser launch arguments
     browser_args = [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-infobars',
-        '--window-position=0,0',
-        f'--window-size={resolution[0]},{resolution[1]}',
-        '--ignore-certifcate-errors',
-        '--ignore-certifcate-errors-spki-list',
-        f'--device-memory={device_memory}',
-        f'--cpu-count={hardware_concurrency}',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--disable-extensions',
     ]
     
-    # Proxy configuration
-    proxy_settings = None
-    if proxy and len(proxy) == 4:
-        host, port, username, password = proxy
-        if all([host, port, username, password]):
-            proxy_settings = {
-                "server": f"http://{host}:{port}",
-                "username": username,
-                "password": password
-            }
-    
-    # Launch browser with stealth settings
-    browser = await getattr(playwright, browser_type).launch(
+    browser = await playwright.chromium.launch(
         headless=True,
         args=browser_args,
-        proxy=proxy_settings,
-        firefox_user_prefs={
-            "media.navigator.streams.fake": True,
-            "dom.webdriver.enabled": False,
-        } if browser_type == 'firefox' else None
+        proxy={
+            "server": f"http://{proxy[0]}:{proxy[1]}",
+            "username": proxy[2],
+            "password": proxy[3]
+        } if proxy and len(proxy) == 4 else None
     )
     
-    # Create context with enhanced stealth
     context = await browser.new_context(
-        viewport={'width': resolution[0], 'height': resolution[1]},
+        viewport={'width': 1920, 'height': 1080},
         user_agent=random.choice(USER_AGENTS),
-        locale=random.choice(['en-US', 'en-GB', 'en-CA']),
-        timezone_id=random.choice([
-            'America/New_York', 'Europe/London', 'Asia/Tokyo',
-            'Australia/Sydney', 'Europe/Paris'
-        ]),
-        permissions=['geolocation'],
-        geolocation={
-            'latitude': random.uniform(30, 50),
-            'longitude': random.uniform(-120, -70)
-        },
-        color_scheme=random.choice(['light', 'dark']),
-        reduced_motion=random.choice(['reduce', 'no-preference']),
-        forced_colors=random.choice(['none', 'active']),
-        device_scale_factor=random.choice([1, 2]),
-        is_mobile=random.random() < 0.1,  # 10% chance of mobile
-        has_touch=random.random() < 0.2,  # 20% chance of touch
-        javascript_enabled=True,
+        locale='en-US',
+        timezone_id='America/New_York',
     )
     
-    # Additional stealth configurations
+    # Minimal stealth script
     await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => false,
-        });
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [
-                { name: 'Chrome PDF Plugin' },
-                { name: 'Chrome PDF Viewer' },
-                { name: 'Native Client' }
-            ],
-        });
-        window.chrome = {
-            runtime: {},
-        };
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
     """)
     
     return browser, context
 
 async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, str]] = None) -> str:
-    """Enhanced stealth Playwright scraping"""
+    """Performance-optimized Playwright scraping"""
     async with async_playwright() as playwright:
         browser, context = await setup_stealth_browser(playwright, proxy)
         
         try:
-            # Create new page
             page = await context.new_page()
+            await page.set_default_navigation_timeout(20000)  # Reduced timeout
             
-            # Randomize navigation behavior
-            await page.set_default_navigation_timeout(random.randint(30000, 60000))
-            await page.set_default_timeout(random.randint(30000, 60000))
+            # Minimal delay
+            await asyncio.sleep(MINIMAL_DELAY)
             
-            # Random delay before navigation
-            await asyncio.sleep(random.uniform(1, 3))
-            
-            # Navigate with stealth patterns
-            response = await page.goto(
-                url,
-                wait_until=random.choice([
-                    'domcontentloaded',
-                    'networkidle',
-                    'load'
-                ])
-            )
+            response = await page.goto(url, wait_until='domcontentloaded')
             
             if not response.ok:
                 raise Exception(f"HTTP {response.status}")
-                
-            # Random scroll behavior
-            if random.random() < 0.7:  # 70% chance to scroll
-                await page.evaluate("""
-                    window.scrollTo({
-                        top: document.body.scrollHeight * Math.random(),
-                        behavior: 'smooth'
-                    });
-                """)
-                await asyncio.sleep(random.uniform(0.5, 2))
-            
-            # Random delay before content extraction
-            await asyncio.sleep(random.uniform(0.5, 1.5))
             
             content = await page.content()
-            
-            # Random delay before closing
-            await asyncio.sleep(random.uniform(0.3, 1))
-            
             return content
             
-        except Exception as e:
-            logger.error(f"Playwright scraping error: {str(e)}")
-            raise
         finally:
             await context.close()
             await browser.close()
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Main scraping function that handles both methods"""
+    """Optimized main scrape function"""
     url = str(task_data['url'])
     method = task_data.get('method', 'simple')
     proxy = task_data.get('proxy')
-    stealth = task_data.get('stealth', True)
     
-    logger.info(f"Starting scrape task for {url} using {method} (stealth: {stealth})")
     start_time = datetime.now()
-    method_used = method
     
     try:
         if method == 'advanced':
             content = await scrape_with_playwright(url, proxy)
-            method_used = 'advanced (playwright)'
+            method_used = 'playwright'
         else:
-            try:
-                content = await scrape_with_aiohttp(url, proxy, stealth=stealth)
-                method_used = 'simple (aiohttp)'
-            except Exception as e:
-                logger.warning(f"aiohttp scraping failed, falling back to playwright: {str(e)}")
-                content = await scrape_with_playwright(url, proxy)
-                method_used = 'Fallback: advanced (playwright)'
-        
-        # Parse content with BeautifulSoup
-        soup = BeautifulSoup(content, 'html.parser', from_encoding='utf-8')
-        
-        # Remove unwanted elements
-        for script in soup(['script', 'style']):
-            script.decompose()
+            content = await scrape_with_aiohttp(url, proxy)
+            method_used = 'aiohttp'
+            
+        # Quick HTML parsing
+        soup = BeautifulSoup(content, 'html.parser')
         
         result = {
             'title': soup.title.string if soup.title else None,
             'text_content': soup.get_text(separator=' ', strip=True),
-            'links': [{'href': a.get('href'), 'text': a.text} for a in soup.find_all('a', href=True)],
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
             'method_used': method_used
