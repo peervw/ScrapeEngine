@@ -9,12 +9,12 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # API Settings
-    AUTH_TOKEN: str
+    AUTH_TOKEN: str | None = None
     HOST: str = "0.0.0.0"
     PORT: int = 8080
         
     # Proxy Settings
-    WEBSHARE_TOKEN: str
+    WEBSHARE_TOKEN: str | None = None
     PROXY_UPDATE_INTERVAL: int = 3600
     PROXY_MAX_FAILURES: int = 3
     PROXY_TIMEOUT: int = 30
