@@ -8,6 +8,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 import socket
+import random
 
 # Setup logging first
 setup_logging()
@@ -56,26 +57,34 @@ async def register_with_distributor():
         logger.error("DISTRIBUTOR_URL environment variable is not set")
         return
     
+    # Add random delay to prevent registration conflicts
+    await asyncio.sleep(random.uniform(1, 5))
+    
     while retry_count < max_retries:
         try:
-            container_name = os.getenv('HOSTNAME', socket.gethostname())
-            runner_url = f"http://{container_name}:8000"
-            logger.debug(f"Attempting to register with URL: {runner_url}")
-            logger.debug(f"Using AUTH_TOKEN: {AUTH_TOKEN[:4]}...")  # Log first 4 chars only
+            # Get container ID for unique identification
+            container_id = os.getenv('HOSTNAME', socket.gethostname())
+            # Use container name for internal Docker network communication
+            runner_url = f"http://{container_id}:8000"
+            runner_id = f"runner-{container_id}"
+            
+            logger.debug(f"Attempting to register with distributor at: {DISTRIBUTOR_URL}")
+            logger.debug(f"Using runner URL: {runner_url}")
+            logger.debug(f"Using runner_id: {runner_id}")
             
             async with aiohttp.ClientSession() as session:
                 response = await session.post(
                     f"{DISTRIBUTOR_URL}/api/runners/register",
                     headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
                     json={
-                        "runner_id": RUNNER_ID,
+                        "runner_id": runner_id,
                         "url": runner_url
                     }
                 )
                 response_text = await response.text()
                 
                 if response.status == 200:
-                    logger.info(f"Runner {RUNNER_ID} registered successfully")
+                    logger.info(f"Runner {runner_id} registered successfully")
                     return
                     
                 logger.warning(f"Registration failed: {response.status} - {response_text}")
@@ -85,9 +94,9 @@ async def register_with_distributor():
         
         retry_count += 1
         if retry_count < max_retries:
-            logger.debug(f"Retry {retry_count}/{max_retries} in 10 seconds...")
-            await asyncio.sleep(10)
-    
+            await asyncio.sleep(random.uniform(5, 15))
+            logger.debug(f"Retry {retry_count}/{max_retries}")
+
     logger.error("Failed to register after maximum retries")
 
 @app.get("/health")

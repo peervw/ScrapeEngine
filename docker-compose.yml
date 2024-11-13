@@ -17,6 +17,8 @@ services:
     volumes:
       - ./Distributor:/app
     restart: unless-stopped
+    networks:
+      - scrape_network
 
   runner:
     build:
@@ -36,3 +38,11 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    deploy:
+      replicas: ${NUM_RUNNERS:-1}
+    networks:
+      - scrape_network
+
+networks:
+  scrape_network:
+    driver: bridge
