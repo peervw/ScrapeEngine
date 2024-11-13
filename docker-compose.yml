@@ -25,7 +25,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - RUNNER_ID=runner-${HOSTNAME:-runner}
-      - DISTRIBUTOR_URL=http://distributor:8080
+      - DISTRIBUTOR_URL=http://scrape.casealpha.app
     depends_on:
       distributor:
         condition: service_healthy
