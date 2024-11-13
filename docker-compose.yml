@@ -18,9 +18,9 @@ services:
       - ./Distributor:/app
     restart: unless-stopped
     networks:
-      default:
+      scrape_network:
         aliases:
-          - distributor.local
+          - distributor
 
   runner:
     build:
@@ -31,7 +31,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - RUNNER_ID=runner-${HOSTNAME:-runner}
-      - DISTRIBUTOR_URL=http://distributor.local:8080
+      - DISTRIBUTOR_URL=http://distributor:8080
     depends_on:
       distributor:
         condition: service_healthy
@@ -42,7 +42,10 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
     deploy:
       replicas: ${NUM_RUNNERS:-1}
+    networks:
+      - scrape_network
 
 networks:
-  default:
+  scrape_network:
     driver: bridge
+    internal: false
