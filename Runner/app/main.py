@@ -18,8 +18,13 @@ logger.info(f"AUTH_TOKEN present: {bool(os.getenv('AUTH_TOKEN'))}")
 logger.info(f"DISTRIBUTOR_URL: {os.getenv('DISTRIBUTOR_URL')}")
 
 RUNNER_ID = f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
-DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_INTERNAL_URL', 'http://distributor:8080')
+DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_URL', 'http://distributor.local:8080')
 AUTH_TOKEN = os.getenv('AUTH_TOKEN')
+
+logger.info("Startup Configuration:")
+logger.info(f"RUNNER_ID: {RUNNER_ID}")
+logger.info(f"DISTRIBUTOR_URL: {DISTRIBUTOR_URL}")
+logger.info(f"AUTH_TOKEN present: {bool(AUTH_TOKEN)}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,7 +59,7 @@ async def register_with_distributor():
         return
         
     if not DISTRIBUTOR_URL:
-        logger.error("DISTRIBUTOR_INTERNAL_URL environment variable is not set")
+        logger.error("DISTRIBUTOR_URL environment variable is not set")
         return
     
     # Add random delay to prevent registration conflicts
@@ -71,14 +76,19 @@ async def register_with_distributor():
             logger.debug(f"Using runner URL: {runner_url}")
             logger.debug(f"Using runner_id: {runner_id}")
             
-            # Add DNS resolution logging
-            try:
-                distributor_ip = socket.gethostbyname('distributor')
-                logger.debug(f"Resolved distributor to IP: {distributor_ip}")
-            except Exception as e:
-                logger.warning(f"Failed to resolve distributor: {e}")
+            # Configure timeout and connection settings
+            timeout = aiohttp.ClientTimeout(total=30)
+            connector = aiohttp.TCPConnector(
+                force_close=True,
+                enable_cleanup_closed=True,
+                ssl=False,
+                use_dns_cache=False
+            )
             
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector
+            ) as session:
                 response = await session.post(
                     f"{DISTRIBUTOR_URL}/api/runners/register",
                     headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
