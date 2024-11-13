@@ -15,6 +15,8 @@ services:
     volumes:
       - ./Distributor:/app
     restart: unless-stopped
+    networks:
+      - scrape_network
 
   runner:
     build:
@@ -25,7 +27,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - RUNNER_ID=runner-${HOSTNAME:-runner}
-      - DISTRIBUTOR_URL=http://scrape.casealpha.app
+      - DISTRIBUTOR_URL=http://distributor:8080
     depends_on:
       distributor:
         condition: service_healthy
@@ -34,3 +36,9 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    networks:
+      - scrape_network
+
+networks:
+  scrape_network:
+    driver: bridge
