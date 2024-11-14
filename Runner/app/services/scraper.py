@@ -170,8 +170,7 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing and proxy"""
     url = str(task_data['url'])
     method = task_data.get('method', 'simple')
-    use_proxy = task_data.get('use_proxy', True)
-    proxy = task_data.get('proxy') if use_proxy else None
+    proxy = task_data.get('proxy') if task_data.get('use_proxy', True) else None
     stealth = task_data.get('stealth', False)
     should_parse = task_data.get('parse', True)
     
@@ -189,18 +188,16 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
             'method_used': method_used,
+            'proxy_used': bool(proxy)
         }
-        
-        # Only include proxy info if proxy was actually used
-        if use_proxy and proxy:
-            result['proxy_used'] = True
             
         # Handle different content return scenarios
         if task_data.get('full_content') == 'yes':
             result['html'] = content
             
         if should_parse:
-            soup = BeautifulSoup(content, 'lxml')
+            # Only parse if explicitly requested
+            soup = BeautifulSoup(content, 'html.parser')
             result.update({
                 'title': soup.title.string if soup.title else None,
                 'text_content': ' '.join(soup.stripped_strings),
@@ -208,6 +205,7 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
                          for a in soup.find_all('a', href=True)]
             })
         else:
+            # Return minimal parsed content
             result['raw_content'] = content
             
         return result
