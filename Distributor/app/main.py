@@ -61,6 +61,7 @@ async def scrape_endpoint(
     authorization: str = Depends(token_required)
 ):
     try:
+        # Only get proxy if use_proxy is True
         proxy = await app.state.proxy_manager.get_next_proxy() if request.use_proxy else None
         task_data = {
             "url": str(request.url),
@@ -69,11 +70,13 @@ async def scrape_endpoint(
             "cache": request.cache,
             "parse": request.parse,
             "use_proxy": request.use_proxy,
-            "proxy": proxy
+            "proxy": proxy  # Will be None if use_proxy is False
         }
         
         result = await app.state.runner_manager.distribute_task(task_data)
-        if proxy:
+        
+        # Only mark proxy result if we used one
+        if request.use_proxy and proxy:
             await app.state.proxy_manager.mark_proxy_result(proxy[0], True)
         
         return {
@@ -82,7 +85,8 @@ async def scrape_endpoint(
             "stealth": request.stealth,
             "cache": request.cache,
             "parse": request.parse,
-            "proxy_used": f"{proxy[0]}:{proxy[1]}" if proxy else "none",
+            # Only include proxy info if proxy was used
+            "proxy_used": f"{proxy[0]}:{proxy[1]}" if request.use_proxy and proxy else None,
             "runner_used": result.get("runner_id", "unknown"),
             "method_used": result.get("method_used", "unknown"),
             "content": result,
@@ -90,7 +94,7 @@ async def scrape_endpoint(
             
     except Exception as e:
         logger.error(f"Scrape error: {e}")
-        if 'proxy' in locals() and proxy:
+        if request.use_proxy and 'proxy' in locals() and proxy:
             await app.state.proxy_manager.mark_proxy_result(proxy[0], False)
         raise HTTPException(status_code=500, detail=str(e))
 
