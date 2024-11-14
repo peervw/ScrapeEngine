@@ -55,7 +55,7 @@ async def get_enhanced_stealth_headers() -> Dict[str, str]:
     )
 )
 async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
-    """Performance-optimized aiohttp scraping"""
+    """Performance-optimized aiohttp scraping with focus on stealth and proxy rotation"""
     try:
         headers = await get_enhanced_stealth_headers() if stealth else {
             "User-Agent": USER_AGENTS[0],
@@ -64,20 +64,19 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
         
         # Reduced timeout values
         timeout = ClientTimeout(
-            total=10,  # Reduced from 15
-            connect=3, # Reduced from 5
-            sock_read=7 # Reduced from 10
+            total=10,
+            connect=3,
+            sock_read=7
         )
         
-        # Optimized connector settings
+        # Connector settings optimized for proxy rotation and stealth
         connector = aiohttp.TCPConnector(
-            force_close=True,
+            force_close=True,        # Important for proxy rotation
             enable_cleanup_closed=True,
             ssl=False,
-            limit_per_host=5,  # Increased from 2
+            limit_per_host=5,
             use_dns_cache=True,
-            ttl_dns_cache=300,  # Add DNS cache TTL
-            keepalive_timeout=10
+            ttl_dns_cache=300
         )
         
         # Minimal delay only if stealth is enabled
@@ -95,9 +94,9 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
                 proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
                 proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
                 allow_redirects=True,
-                max_redirects=2,  # Reduced from 3
+                max_redirects=2,
                 timeout=timeout,
-                verify_ssl=False  # Disable SSL verification for speed
+                verify_ssl=False
             ) as response:
                 if response.status != 200:
                     raise ClientError(f"HTTP {response.status}")
