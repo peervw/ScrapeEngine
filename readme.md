@@ -1,8 +1,8 @@
-# Web Scraping Distributed System
+# ScrapeEngine
 
-A scalable, distributed web scraping system built with FastAPI and Docker, featuring proxy rotation and multiple scraping methods.
+An easily scalable, distributed web scraping system built with FastAPI and Docker, featuring proxy rotation (from Webshare.io) and multiple scraping methods leveraging advanced stealth techniques.
 
-## Features
+## 🚀 Features
 
 - **Distributed Architecture**: Separate distributor and runner services
 - **Multiple Scraping Methods**: 
@@ -35,13 +35,13 @@ A scalable, distributed web scraping system built with FastAPI and Docker, featu
                                          └──────────┘
 ```
 
-## Prerequisites
+## 📋Prerequisites
 
 - Docker and Docker Compose
 - Python 3.11+
 - Webshare.io API token for proxies
 
-## Quick Start
+## 🛠️ Quick Start
 
 1. Clone the repository:
 ```bash
@@ -61,7 +61,7 @@ DEBUG=false
 docker-compose up -d
 ```
 
-## API Endpoints
+## 🔍 API Endpoints
 
 ### Distributor Service
 
@@ -106,7 +106,7 @@ Is only available inside the docker network. Requested by the distributor servic
 - **GET** `/health`
   - Health check endpoint
 
-## Configuration
+## 🛠️ Configuration
 
 ### Environment Variables
 
