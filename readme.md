@@ -99,6 +99,7 @@ Authorization: Bearer <AUTH_TOKEN>
 
 ### Runner Service
 Is only available inside the docker network. Requested by the distributor service.
+
 **Base URL**: `http://localhost:8000`
 
 - **POST** `/scrape`
