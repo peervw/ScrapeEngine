@@ -8,7 +8,7 @@ An easily scalable, distributed web scraping system built with FastAPI and Docke
 - **Multiple Scraping Methods**: 
   - Simple (aiohttp) for basic scraping
   - Advanced (Playwright) for JavaScript-heavy sites
-- **Proxy Management**:
+- **Proxy Management** (using Webshare.io):
   - Automatic proxy rotation
   - Health monitoring
   - Success rate tracking
