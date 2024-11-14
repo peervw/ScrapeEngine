@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+aiohttp
+beautifulsoup4
+playwright
+tenacity
+python-dotenv

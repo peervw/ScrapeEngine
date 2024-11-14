@@ -1,8 +1,7 @@
 fastapi
 uvicorn
 pydantic
-cachetools
-requests
-python-dotenv
-tenacity
 pydantic-settings==2.1.0
+aiohttp
+python-dotenv
+setuptools

@@ -1,198 +1,179 @@
-# CaseAlpha ScrapeEngine
+# ScrapeEngine
 
-A robust, scalable web scraping service built with FastAPI, featuring proxy rotation, rate limiting, and caching capabilities.
+An easily scalable, distributed web scraping system built with FastAPI and Docker, featuring proxy rotation (from Webshare.io) and multiple scraping methods leveraging advanced stealth techniques.
 
 ## 🚀 Features
 
-- **High Performance Scraping**: Asynchronous scraping with automatic retries
-- **Proxy Management**: Automatic proxy rotation and management
-- **Rate Limiting**: Built-in rate limiting to prevent overloading
-- **Caching**: Intelligent caching system to minimize redundant requests
-- **API Authentication**: Secure endpoint access with token authentication
-- **Error Handling**: Comprehensive error handling and logging
-- **Input Validation**: Request validation using Pydantic models
+- **Distributed Architecture**: Separate distributor and runner services
+- **Multiple Scraping Methods**: 
+  - Simple (aiohttp) for basic scraping
+  - Advanced (Playwright) for JavaScript-heavy sites
+- **Proxy Management** (using Webshare.io):
+  - Automatic proxy rotation
+  - Health monitoring
+  - Success rate tracking
+- **Stealth Features**:
+  - Browser fingerprint randomization
+  - Header rotation
+  - User agent spoofing
+- **Health Monitoring**:
+  - Service health checks
+  - Runner registration system
+  - Proxy performance tracking
 
-## 📋 Prerequisites
+## Architecture
 
-- Python 3.9+
-- pip
-- Virtual environment (recommended)
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────┐
+│   Client    │────▶│  Distributor │────▶│ Runner 1 │
+└─────────────┘     │   Service    │     └──────────┘
+                    │              │     ┌──────────┐
+                    │              │────▶│ Runner 2 │
+                    └──────────────┘     └──────────┘
+                          │              ┌──────────┐
+                          └─────────────▶│ Runner N │
+                                         └──────────┘
+```
 
-## 🛠️ Installation
+## 📋Prerequisites
+
+- Docker and Docker Compose
+- Python 3.11+
+- Webshare.io API token for proxies
+
+## 🛠️ Quick Start
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/casealpha-scrapeengine.git
-cd casealpha-scrapeengine
+git clone <repository-url>
+cd web-scraping-system
 ```
 
-2. Create and activate virtual environment:
+2. Create `.env` file:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Create `.env` file:
-```bash
-cp .env.example .env
-```
-
-5. Update the `.env` file with your configuration:
-```env
-AUTH_TOKEN=your_auth_token
 WEBSHARE_TOKEN=your_webshare_token
-MAX_WORKERS=4
-HOST=0.0.0.0
-PORT=8080
+AUTH_TOKEN=your_auth_token
+DEBUG=false
 ```
 
-## 🚀 Running the Application
-
-### Development
+3. Start the services:
 ```bash
-uvicorn app.main:app --reload
+docker-compose up -d
 ```
 
-### Production
+## 🔍 API Endpoints
+
+### Distributor Service
+
+**Base URL**: `http://localhost:8080`
+
+#### Authentication
+All protected endpoints require Bearer token authentication set in the env variable `AUTH_TOKEN`:
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4
+Authorization: Bearer <AUTH_TOKEN>
 ```
 
-## 🔍 API Documentation
+#### Endpoints
 
-Once the application is running, access the API documentation at:
-- Swagger UI: `http://localhost:8080/docs`
-- ReDoc: `http://localhost:8080/redoc`
-
-### Basic Usage
-
-```python
-import requests
-
-headers = {
-    "Authorization": "your_auth_token"
-}
-
-payload = {
+- **POST** `/api/scrape`
+  - Initiates a scraping task
+  - Request body:
+```json
+{
     "url": "https://example.com",
-    "link_or_article": "article"
+    "full_content": "yes",
+    "stealth": true,
+    "method": "simple",
+    "cache": true
 }
-
-response = requests.post(
-    "http://localhost:8080/api/scrape",
-    json=payload,
-    headers=headers
-)
-
-print(response.json())
 ```
 
-## 🧪 Testing
+- **GET** `/health/public`
+  - Public health check endpoint
 
-Run the test suite:
+- **GET** `/api/debug/proxies`
+  - View proxy status (protected)
+
+- **GET** `/api/debug/runners`
+  - View runner status (protected)
+
+### Runner Service
+Is only available inside the docker network. Requested by the distributor service.
+
+**Base URL**: `http://localhost:8000`
+
+- **POST** `/scrape`
+  - Internal endpoint for scraping tasks
+- **GET** `/health`
+  - Health check endpoint
+
+## 🛠️ Configuration
+
+### Environment Variables
+
+- `WEBSHARE_TOKEN`: Webshare.io API token
+- `AUTH_TOKEN`: Authentication token for API access
+- `DEBUG`: Enable debug logging (true/false)
+
+### Docker Compose Configuration
+
+The system uses Docker Compose for orchestration. Key configurations:
+
+```yaml
+services:
+  distributor:
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    
+  runner:
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RUNNER_ID=runner-${HOSTNAME:-runner}
+      - DISTRIBUTOR_URL=http://distributor:8080
+```
+
+## Development
+
+### Project Structure
+
+```
+├── Distributor/
+│   ├── app/
+│   │   ├── services/
+│   │   ├── config/
+│   │   └── models.py
+│   │   └── main.py
+│   └── Dockerfile
+├── Runner/
+│   ├── app/
+│   │   ├── services/
+│   │   ├── config/
+│   │   └── models.py
+│   │   └── main.py
+│   └── Dockerfile
+└── docker-compose.yml
+```
+
+### Adding New Runners
+
+The system automatically scales with additional runner instances. To add more runners:
+
 ```bash
-# Install dev dependencies
-pip install -r requirements-dev.txt
-
-# Run tests
-pytest
-
-# Run tests with coverage
-pytest --cov=app
+docker-compose up -d --scale runner=3
 ```
 
-## 📁 Project Structure
+## Monitoring
 
-```
-casealpha-scrapeengine/
-├── app/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── functions.py
-│   └── static/
-│       └── proxies.txt
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_main.py
-│   └── test_functions.py
-├── .env
-├── .env.example
-├── .gitignore
-├── requirements.txt
-├── requirements-dev.txt
-├── pytest.ini
-└── README.md
-```
+- Monitor service health via `/health` endpoints
+- Check proxy status and available proxies via `/api/debug/proxies`
+- View runner status and registered runners via `/api/debug/runners`
 
-## 🔒 Environment Variables
+## Error Handling
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| AUTH_TOKEN | Authentication token for API access | - |
-| WEBSHARE_TOKEN | Token for proxy service | - |
-| MAX_WORKERS | Number of worker processes | 4 |
-| HOST | Host address | 0.0.0.0 |
-| PORT | Port number | 8080 |
-
-## 🛡️ Error Handling
-
-The API uses standard HTTP status codes:
-
-- 200: Successful request
-- 401: Unauthorized
-- 422: Validation error
-- 429: Too many requests
-- 500: Internal server error
-
-## 🔧 Development
-
-1. Copy the development environment file:
-```bash
-cp .env.example .env.development
-```
-
-2. Update the development environment variables in `.env.development`
-
-3. Run in development mode:
-```bash
-python scripts/dev.py
-```
-
-## 🚀 Production
-
-1. Set up production environment variables:
-```bash
-# Using actual environment variables
-export AUTH_TOKEN=your_token
-export WEBSHARE_TOKEN=your_webshare_token
-
-# Or copy and edit production env file
-cp .env.example .env.production
-```
-
-2. Run in production mode:
-```bash
-ENV=production uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-## 🐳 Docker
-
-Development:
-```bash
-docker-compose up
-```
-
-Production:
-```bash
-docker build -t scrapeengine .
-docker run -p 8080:8080 \
-  -e AUTH_TOKEN=your_token \
-  -e WEBSHARE_TOKEN=your_webshare_token \
-  scrapeengine
-```
+The system includes:
+- Automatic retry mechanisms for failed requests
+- Proxy rotation on failures
+- Runner health monitoring
+- Detailed logging

@@ -1,0 +1,44 @@
+services:
+  distributor:
+    build:
+      context: ./Distributor
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/public"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./Distributor:/app
+    restart: unless-stopped
+    networks:
+      - scrape_network
+
+  runner:
+    build:
+      context: ./Runner
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RUNNER_ID=runner-${HOSTNAME:-runner}
+      - DISTRIBUTOR_URL=http://distributor:8080
+    depends_on:
+      distributor:
+        condition: service_healthy
+    volumes:
+      - ./Runner:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    networks:
+      - scrape_network
+
+networks:
+  scrape_network:
+    driver: bridge
