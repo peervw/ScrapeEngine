@@ -6,6 +6,7 @@ class ScrapeRequest(BaseModel):
     full_content: str
     stealth: Optional[bool] = False
     cache: Optional[bool] = True
+    parse: Optional[bool] = True
 
 class ScrapeResponse(BaseModel):
     url: str
