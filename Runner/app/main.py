@@ -30,10 +30,6 @@ logger.info(f"AUTH_TOKEN present: {bool(AUTH_TOKEN)}")
 async def lifespan(app: FastAPI):
     # Startup
     logger.debug(f"Starting up runner {RUNNER_ID}")
-    logger.debug(f"Environment variables:")
-    logger.debug(f"RUNNER_ID: {RUNNER_ID}")
-    logger.debug(f"DISTRIBUTOR_URL: {DISTRIBUTOR_URL}")
-    logger.debug(f"AUTH_TOKEN present: {bool(AUTH_TOKEN)}")
     
     # Start registration process in background
     registration_task = asyncio.create_task(register_with_distributor())

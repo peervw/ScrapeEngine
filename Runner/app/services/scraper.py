@@ -23,7 +23,6 @@ USER_AGENTS = [
 
 # Optimize constants for faster performance
 MINIMAL_DELAY = 0.1  # Reduced from 0.5
-MAX_DELAY = 0.5     # Reduced from 2.0
 
 async def get_enhanced_stealth_headers() -> Dict[str, str]:
     """Optimized stealth headers - only essential ones"""

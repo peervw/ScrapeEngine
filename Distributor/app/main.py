@@ -71,27 +71,24 @@ async def scrape_endpoint(
             "proxy": proxy
         }
         
-        try:
-            result = await app.state.runner_manager.distribute_task(task_data)
-            await app.state.proxy_manager.mark_proxy_result(proxy[0], True)
-            
-            # Format response
-            return {
-                "url": request.url,
-                "full_content": request.full_content,
-                "stealth": request.stealth,
-                "cache": request.cache,
-                "proxy_used": f"{proxy[0]}:{proxy[1]}",
-                "runner_used": result.get("runner_id", "unknown"),
-                "method_used": result.get("method_used", "unknown"),
-                "content": result,
-            }
-        except Exception as e:
-            await app.state.proxy_manager.mark_proxy_result(proxy[0], False)
-            raise e
+        result = await app.state.runner_manager.distribute_task(task_data)
+        await app.state.proxy_manager.mark_proxy_result(proxy[0], True)
+        
+        return {
+            "url": request.url,
+            "full_content": request.full_content,
+            "stealth": request.stealth,
+            "cache": request.cache,
+            "proxy_used": f"{proxy[0]}:{proxy[1]}",
+            "runner_used": result.get("runner_id", "unknown"),
+            "method_used": result.get("method_used", "unknown"),
+            "content": result,
+        }
             
     except Exception as e:
         logger.error(f"Scrape error: {e}")
+        if 'proxy' in locals():
+            await app.state.proxy_manager.mark_proxy_result(proxy[0], False)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post('/api/runners/register')
