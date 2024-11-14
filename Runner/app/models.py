@@ -8,5 +8,6 @@ class ScrapeRequest(BaseModel):
     stealth: bool = False     # Enable stealth mode
     cache: bool = True
     parse: bool = True
-    proxy: Tuple[str, str, str, str]
+    use_proxy: bool = True
+    proxy: Optional[Tuple[str, str, str, str]] = None
     headers: Optional[Dict[str, str]] = None
