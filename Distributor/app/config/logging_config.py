@@ -37,7 +37,7 @@ def setup_logging():
         class APIFilter(logging.Filter):
             def filter(self, record):
                 return record.args and (
-                    record.args[2].startswith("/api/") or 
-                    record.args[2].startswith("/health")
+                    not record.args[2].endswith("/health") and
+                    not record.args[2].endswith("/health/public")
                 )
         uvicorn_access.addFilter(APIFilter())

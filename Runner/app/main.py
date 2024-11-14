@@ -13,9 +13,6 @@ import random
 # Setup logging first
 setup_logging()
 logger = logging.getLogger(__name__)
-logger.info("Environment variables:")
-logger.info(f"AUTH_TOKEN present: {bool(os.getenv('AUTH_TOKEN'))}")
-logger.info(f"DISTRIBUTOR_URL: {os.getenv('DISTRIBUTOR_URL')}")
 
 RUNNER_ID = f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
 DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_URL', 'http://distributor.local:8080')
