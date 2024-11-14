@@ -30,9 +30,9 @@ A scalable, distributed web scraping system built with FastAPI and Docker, featu
                     │              │     ┌──────────┐
                     │              │────▶│ Runner 2 │
                     └──────────────┘     └──────────┘
-                          │             ┌──────────┐
-                          └────────────▶│ Runner N │
-                                       └──────────┘
+                          │              ┌──────────┐
+                          └─────────────▶│ Runner N │
+                                         └──────────┘
 ```
 
 ## Prerequisites
@@ -68,7 +68,7 @@ docker-compose up -d
 **Base URL**: `http://localhost:8080`
 
 #### Authentication
-All protected endpoints require Bearer token authentication:
+All protected endpoints require Bearer token authentication set in the env variable `AUTH_TOKEN`:
 ```bash
 Authorization: Bearer <AUTH_TOKEN>
 ```
@@ -83,6 +83,7 @@ Authorization: Bearer <AUTH_TOKEN>
     "url": "https://example.com",
     "full_content": "yes",
     "stealth": true,
+    "method": "simple",
     "cache": true
 }
 ```
@@ -97,7 +98,7 @@ Authorization: Bearer <AUTH_TOKEN>
   - View runner status (protected)
 
 ### Runner Service
-
+Is only available inside the docker network. Requested by the distributor service.
 **Base URL**: `http://localhost:8000`
 
 - **POST** `/scrape`
@@ -112,8 +113,6 @@ Authorization: Bearer <AUTH_TOKEN>
 - `WEBSHARE_TOKEN`: Webshare.io API token
 - `AUTH_TOKEN`: Authentication token for API access
 - `DEBUG`: Enable debug logging (true/false)
-- `DISTRIBUTOR_URL`: URL for distributor service
-- `RUNNER_ID`: Unique ID for runner instances
 
 ### Docker Compose Configuration
 
@@ -144,12 +143,14 @@ services:
 │   │   ├── services/
 │   │   ├── config/
 │   │   └── models.py
+│   │   └── main.py
 │   └── Dockerfile
 ├── Runner/
 │   ├── app/
 │   │   ├── services/
 │   │   ├── config/
 │   │   └── models.py
+│   │   └── main.py
 │   └── Dockerfile
 └── docker-compose.yml
 ```
@@ -165,8 +166,8 @@ docker-compose up -d --scale runner=3
 ## Monitoring
 
 - Monitor service health via `/health` endpoints
-- Check proxy status via `/api/debug/proxies`
-- View runner status via `/api/debug/runners`
+- Check proxy status and available proxies via `/api/debug/proxies`
+- View runner status and registered runners via `/api/debug/runners`
 
 ## Error Handling
 
