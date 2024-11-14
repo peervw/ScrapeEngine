@@ -1,6 +1,6 @@
 # ScrapeEngine
 
-An easily scalable, distributed web scraping system built with FastAPI and Docker, featuring proxy rotation (from Webshare.io) and multiple scraping methods leveraging advanced stealth techniques.
+An easily scalable, distributed web scraping API built with FastAPI and Docker, featuring proxy rotation (from Webshare.io) and multiple scraping methods leveraging advanced stealth techniques.
 
 ## 🚀 Features
 
