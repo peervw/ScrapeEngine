@@ -45,8 +45,8 @@ An easily scalable, distributed web scraping system built with FastAPI and Docke
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd web-scraping-system
+git clone https://github.com/PeerZ0/ScrapeEngine.git
+cd ScrapeEngine
 ```
 
 2. Create `.env` file:
