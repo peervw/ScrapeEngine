@@ -61,6 +61,11 @@ DEBUG=false
 docker-compose up -d
 ```
 
+4. If you want to deploy more than one runner:
+```bash
+docker-compose up -d --scale runner=3
+```
+
 ## 🔍 API Endpoints
 
 ### Distributor Service
