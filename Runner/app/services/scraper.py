@@ -167,10 +167,10 @@ async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, 
             await browser.close()
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Optimized main scrape function with optional parsing and proxy"""
+    """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
     method = task_data.get('method', 'simple')
-    proxy = task_data.get('proxy') if task_data.get('use_proxy', True) else None
+    proxy = task_data.get('proxy')
     stealth = task_data.get('stealth', False)
     should_parse = task_data.get('parse', True)
     
@@ -188,7 +188,6 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
             'method_used': method_used,
-            'proxy_used': bool(proxy)
         }
             
         # Handle different content return scenarios

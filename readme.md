@@ -89,12 +89,9 @@ Authorization: Bearer <AUTH_TOKEN>
     "full_content": "yes",
     "stealth": true,
     "method": "simple",
-    "cache": true,
-    "use_proxy": true,
-    "parse": true
+    "cache": true
 }
 ```
-Where `use_proxy` and `parse` are optional and default to `true`.
 
 - **GET** `/health/public`
   - Public health check endpoint
