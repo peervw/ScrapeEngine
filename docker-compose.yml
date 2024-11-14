@@ -4,7 +4,7 @@ services:
       context: ./Distributor
       dockerfile: Dockerfile
     env_file:
-      - .env.development
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:
@@ -23,7 +23,7 @@ services:
       context: ./Runner
       dockerfile: Dockerfile
     env_file:
-      - .env.development
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - RUNNER_ID=runner-${HOSTNAME:-runner}

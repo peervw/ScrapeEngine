@@ -7,37 +7,26 @@ def setup_logging():
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-    # Get log level from environment variable
+    # Only use DEBUG environment variable
     is_debug = os.getenv('DEBUG', 'false').lower() == 'true'
     
-    # Base configuration
+    # Base configuration with conditional level
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if is_debug else logging.INFO,
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         stream=sys.stdout
     )
 
     if is_debug:
-        # Debug mode - verbose logging
+        # Debug mode - verbose logging for all components
         logging.getLogger("uvicorn").setLevel(logging.DEBUG)
         logging.getLogger("fastapi").setLevel(logging.DEBUG)
         logging.getLogger("aiohttp").setLevel(logging.DEBUG)
     else:
-        # Production mode - minimal logging but keep API logs
+        # Production mode - minimal logging
         logging.getLogger("uvicorn.access").setLevel(logging.INFO)
         logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
         logging.getLogger("fastapi").setLevel(logging.WARNING)
         logging.getLogger("aiohttp").setLevel(logging.WARNING)
         
-        # Keep app-specific loggers at INFO
-        logging.getLogger("app").setLevel(logging.INFO)
-        
-        # Custom filter for access logs
-        uvicorn_access = logging.getLogger("uvicorn.access")
-        class APIFilter(logging.Filter):
-            def filter(self, record):
-                return record.args and (
-                    record.args[2].startswith("/scrape") or 
-                    record.args[2].startswith("/health")
-                )
-        uvicorn_access.addFilter(APIFilter())
+        # Filter

@@ -3,7 +3,6 @@ from typing import Optional
 from .services.proxy_manager import ProxyManager
 from .services.runner_manager import RunnerManager
 from .models import ScrapeRequest
-from .config import Settings, get_settings
 from .config.logging_config import setup_logging
 import logging
 import os

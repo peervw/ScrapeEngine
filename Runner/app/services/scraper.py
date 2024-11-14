@@ -21,20 +21,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 
-# Add more randomized browser fingerprinting data
-BROWSER_VERSIONS = {
-    'chrome': ['120.0.0.0', '119.0.0.0', '118.0.0.0'],
-    'firefox': ['121.0', '120.0', '119.0'],
-    'safari': ['17.2', '17.1', '17.0']
-}
-
-DEVICE_MEMORY = [2, 4, 8, 16]
-HARDWARE_CONCURRENCY = [2, 4, 6, 8, 12]
-SCREEN_RESOLUTIONS = [
-    (1920, 1080), (1366, 768), (1536, 864),
-    (1440, 900), (1280, 720), (2560, 1440)
-]
-
 # Optimize constants for faster performance
 MINIMAL_DELAY = 0.1  # Reduced from 0.5
 MAX_DELAY = 0.5     # Reduced from 2.0
