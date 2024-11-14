@@ -30,7 +30,6 @@ async def lifespan(app: FastAPI):
     
     yield  # Server is running
     
-    # Shutdown (if you need cleanup code)
 
 app = FastAPI(
     title="ScrapeEngine Distributor",

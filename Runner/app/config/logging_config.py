@@ -3,7 +3,6 @@ import sys
 import os
 
 def setup_logging():
-    # Remove all handlers
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 

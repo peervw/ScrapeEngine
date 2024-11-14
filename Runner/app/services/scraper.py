@@ -21,8 +21,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 
-# Optimize constants for faster performance
-MINIMAL_DELAY = 0.1  # Reduced from 0.5
+MINIMAL_DELAY = 0.1
 
 async def get_enhanced_stealth_headers() -> Dict[str, str]:
     """Optimized stealth headers - only essential ones"""
@@ -38,7 +37,6 @@ async def get_enhanced_stealth_headers() -> Dict[str, str]:
         "Sec-CH-UA-Platform": f'"{random.choice(["Windows", "macOS", "Linux"])}"',
     }
     
-    # Add only high-impact random headers
     if random.random() > 0.5:
         headers["DNT"] = "1"
     
@@ -61,10 +59,9 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
     try:
         headers = await get_enhanced_stealth_headers()
         
-        # Optimized timeout settings
         timeout = ClientTimeout(
-            total=15,          # Reduced from 30
-            connect=5,         # Reduced from 10
+            total=15,
+            connect=5,
             sock_read=10
         )
         
@@ -72,11 +69,10 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
             force_close=True,
             enable_cleanup_closed=True,
             ssl=False,
-            limit_per_host=2,  # Increased from 1 for better performance
-            use_dns_cache=True # Enable DNS cache
+            limit_per_host=2,
+            use_dns_cache=True
         )
         
-        # Minimal delay
         await asyncio.sleep(MINIMAL_DELAY)
         
         async with aiohttp.ClientSession(
@@ -90,7 +86,7 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
                 proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
                 proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
                 allow_redirects=True,
-                max_redirects=3,  # Reduced from 5
+                max_redirects=3,
                 timeout=timeout
             ) as response:
                 if response.status != 200:
@@ -104,7 +100,7 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
 
 async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str, str]] = None):
     """Performance-optimized Playwright setup"""
-    browser_type = 'chromium'  # Stick to chromium for consistency and speed
+    browser_type = 'chromium'
     
     browser_args = [
         '--no-sandbox',
@@ -132,7 +128,6 @@ async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str,
         timezone_id='America/New_York',
     )
     
-    # Minimal stealth script
     await context.add_init_script("""
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
     """)
@@ -146,9 +141,8 @@ async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, 
         
         try:
             page = await context.new_page()
-            await page.set_default_navigation_timeout(20000)  # Reduced timeout
+            await page.set_default_navigation_timeout(20000)
             
-            # Minimal delay
             await asyncio.sleep(MINIMAL_DELAY)
             
             response = await page.goto(url, wait_until='domcontentloaded')

@@ -38,7 +38,7 @@ class ProxyManager:
         
         # Round-robin selection
         host = self.available_proxies.pop(0)
-        self.available_proxies.append(host)  # Add back to end
+        self.available_proxies.append(host)
         
         proxy_data = self.proxies[host]
         proxy_data["last_used"] = datetime.now().isoformat()

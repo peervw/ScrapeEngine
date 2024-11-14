@@ -100,7 +100,6 @@ async def register_with_distributor():
                 
         except Exception as e:
             logger.error(f"Failed to register runner: {str(e)}")
-            # Add more detailed error logging
             if isinstance(e, aiohttp.ClientError):
                 logger.error(f"Connection error details: {str(e)}")
         
