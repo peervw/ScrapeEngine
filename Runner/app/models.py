@@ -7,5 +7,6 @@ class ScrapeRequest(BaseModel):
     method: Literal["aiohttp", "playwright"] = "aiohttp"  # Choose scraping method
     stealth: bool = False     # Enable stealth mode
     cache: bool = True
+    parse: bool = True
     proxy: Tuple[str, str, str, str]
     headers: Optional[Dict[str, str]] = None

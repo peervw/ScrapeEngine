@@ -67,6 +67,7 @@ async def scrape_endpoint(
             "full_content": request.full_content,
             "stealth": request.stealth,
             "cache": request.cache,
+            "parse": request.parse,
             "proxy": proxy
         }
         
@@ -78,6 +79,7 @@ async def scrape_endpoint(
             "full_content": request.full_content,
             "stealth": request.stealth,
             "cache": request.cache,
+            "parse": request.parse,
             "proxy_used": f"{proxy[0]}:{proxy[1]}",
             "runner_used": result.get("runner_id", "unknown"),
             "method_used": result.get("method_used", "unknown"),

@@ -57,23 +57,32 @@ async def get_enhanced_stealth_headers() -> Dict[str, str]:
 async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
     """Performance-optimized aiohttp scraping"""
     try:
-        headers = await get_enhanced_stealth_headers()
+        headers = await get_enhanced_stealth_headers() if stealth else {
+            "User-Agent": USER_AGENTS[0],
+            "Accept": "*/*"
+        }
         
+        # Reduced timeout values
         timeout = ClientTimeout(
-            total=15,
-            connect=5,
-            sock_read=10
+            total=10,  # Reduced from 15
+            connect=3, # Reduced from 5
+            sock_read=7 # Reduced from 10
         )
         
+        # Optimized connector settings
         connector = aiohttp.TCPConnector(
             force_close=True,
             enable_cleanup_closed=True,
             ssl=False,
-            limit_per_host=2,
-            use_dns_cache=True
+            limit_per_host=5,  # Increased from 2
+            use_dns_cache=True,
+            ttl_dns_cache=300,  # Add DNS cache TTL
+            keepalive_timeout=10
         )
         
-        await asyncio.sleep(MINIMAL_DELAY)
+        # Minimal delay only if stealth is enabled
+        if stealth:
+            await asyncio.sleep(MINIMAL_DELAY)
         
         async with aiohttp.ClientSession(
             headers=headers,
@@ -86,8 +95,9 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
                 proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
                 proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
                 allow_redirects=True,
-                max_redirects=3,
-                timeout=timeout
+                max_redirects=2,  # Reduced from 3
+                timeout=timeout,
+                verify_ssl=False  # Disable SSL verification for speed
             ) as response:
                 if response.status != 200:
                     raise ClientError(f"HTTP {response.status}")
@@ -158,10 +168,12 @@ async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, 
             await browser.close()
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Optimized main scrape function"""
+    """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
     method = task_data.get('method', 'simple')
     proxy = task_data.get('proxy')
+    stealth = task_data.get('stealth', False)
+    should_parse = task_data.get('parse', True)
     
     start_time = datetime.now()
     
@@ -170,23 +182,31 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
             content = await scrape_with_playwright(url, proxy)
             method_used = 'playwright'
         else:
-            content = await scrape_with_aiohttp(url, proxy)
+            content = await scrape_with_aiohttp(url, proxy, stealth)
             method_used = 'aiohttp'
-            
-        # Quick HTML parsing
-        soup = BeautifulSoup(content, 'html.parser')
         
         result = {
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
             'method_used': method_used,
-            'title': soup.title.string if soup.title else None,
-            'text_content': soup.get_text(separator=' ', strip=True),
-            'links': [{'href': a.get('href'), 'text': a.text} for a in soup.find_all('a', href=True)]
         }
-        
+            
+        # Handle different content return scenarios
         if task_data.get('full_content') == 'yes':
             result['html'] = content
+            
+        if should_parse:
+            # Only parse if explicitly requested
+            soup = BeautifulSoup(content, 'html.parser')
+            result.update({
+                'title': soup.title.string if soup.title else None,
+                'text_content': ' '.join(soup.stripped_strings),
+                'links': [{'href': a.get('href'), 'text': a.text} 
+                         for a in soup.find_all('a', href=True)]
+            })
+        else:
+            # Return minimal parsed content
+            result['raw_content'] = content
             
         return result
         
