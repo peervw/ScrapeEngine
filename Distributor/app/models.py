@@ -3,16 +3,15 @@ from typing import Tuple, Optional
 
 class ScrapeRequest(BaseModel):
     url: str
-    full_content: str
-    stealth: Optional[bool] = False
-    cache: Optional[bool] = True
-    parse: Optional[bool] = True
+    stealth: bool = False
+    render: bool = False
+    parse: bool = True
 
 class ScrapeResponse(BaseModel):
     url: str
-    full_content: str
     stealth: bool
-    cache: bool
+    render: bool
+    parse: bool
     proxy_used: str
     runner_used: str
     method_used: str

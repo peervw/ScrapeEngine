@@ -9,6 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 import socket
 import random
+import psycopg2
 
 # Setup logging first
 setup_logging()
@@ -16,12 +17,33 @@ logger = logging.getLogger(__name__)
 
 RUNNER_ID = f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
 DISTRIBUTOR_URL = os.getenv('DISTRIBUTOR_URL', 'http://distributor.local:8080')
-AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 
 logger.info("Startup Configuration:")
 logger.info(f"RUNNER_ID: {RUNNER_ID}")
 logger.info(f"DISTRIBUTOR_URL: {DISTRIBUTOR_URL}")
-logger.info(f"AUTH_TOKEN present: {bool(AUTH_TOKEN)}")
+
+def get_api_key():
+    """Get the current API key from the database"""
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'db'),
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            dbname=os.getenv('POSTGRES_DB', 'scrapeengine'),
+            user=os.getenv('POSTGRES_USER', 'postgres'),
+            password=os.getenv('POSTGRES_PASSWORD', 'postgres')
+        )
+        c = conn.cursor()
+        c.execute('SELECT key FROM api_keys ORDER BY created_at DESC LIMIT 1')
+        key = c.fetchone()
+        conn.close()
+        
+        if not key:
+            raise Exception("No API key found in database")
+        
+        return key[0]
+    except Exception as e:
+        logger.error(f"Failed to get API key from database: {e}")
+        raise
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,16 +69,22 @@ async def register_with_distributor():
     max_retries = 30
     retry_count = 0
     
-    if not AUTH_TOKEN:
-        logger.error("AUTH_TOKEN environment variable is not set")
-        return
-        
     if not DISTRIBUTOR_URL:
         logger.error("DISTRIBUTOR_URL environment variable is not set")
         return
     
     # Add random delay to prevent registration conflicts
     await asyncio.sleep(random.uniform(1, 5))
+    
+    # Configure timeout and connection settings
+    timeout = aiohttp.ClientTimeout(total=30)
+    connector = aiohttp.TCPConnector(
+        force_close=True,
+        enable_cleanup_closed=True,
+        ssl=False,
+        use_dns_cache=False,
+        ttl_dns_cache=300
+    )
     
     while retry_count < max_retries:
         try:
@@ -69,34 +97,33 @@ async def register_with_distributor():
             logger.debug(f"Using runner URL: {runner_url}")
             logger.debug(f"Using runner_id: {runner_id}")
             
-            # Configure timeout and connection settings
-            timeout = aiohttp.ClientTimeout(total=30)
-            connector = aiohttp.TCPConnector(
-                force_close=True,
-                enable_cleanup_closed=True,
-                ssl=False,
-                use_dns_cache=False
-            )
+            # Get API key from database
+            api_key = get_api_key()
+            logger.debug("Got API key from database")
             
-            async with aiohttp.ClientSession(
-                timeout=timeout,
-                connector=connector
-            ) as session:
-                response = await session.post(
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                # Register with the API key
+                logger.debug("Attempting registration...")
+                async with session.post(
                     f"{DISTRIBUTOR_URL}/api/runners/register",
-                    headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
+                    headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "runner_id": runner_id,
                         "url": runner_url
                     }
-                )
-                response_text = await response.text()
-                
-                if response.status == 200:
-                    logger.info(f"Runner {runner_id} registered successfully")
-                    return
+                ) as response:
+                    response_text = await response.text()
                     
-                logger.warning(f"Registration failed: {response.status} - {response_text}")
+                    if response.status == 200:
+                        logger.info(f"Runner {runner_id} registered successfully")
+                        # Store API key for future use
+                        app.state.api_key = api_key
+                        # Start health check loop
+                        asyncio.create_task(health_check_loop())
+                        return
+                    
+                    logger.warning(f"Registration failed: {response.status} - {response_text}")
+                    raise Exception(f"Registration failed with status {response.status}: {response_text}")
                 
         except Exception as e:
             logger.error(f"Failed to register runner: {str(e)}")
@@ -105,10 +132,33 @@ async def register_with_distributor():
         
         retry_count += 1
         if retry_count < max_retries:
-            await asyncio.sleep(random.uniform(5, 15))
-            logger.debug(f"Retry {retry_count}/{max_retries}")
+            delay = min(30, 2 ** retry_count)  # Exponential backoff with max 30 seconds
+            logger.debug(f"Retry {retry_count}/{max_retries} in {delay} seconds")
+            await asyncio.sleep(delay)
 
     logger.error("Failed to register after maximum retries")
+
+async def health_check_loop():
+    """Periodically check health and re-register if needed"""
+    while True:
+        try:
+            # Check distributor health
+            async with aiohttp.ClientSession() as session:
+                try:
+                    response = await session.get(
+                        f"{DISTRIBUTOR_URL}/health/public",
+                        timeout=5
+                    )
+                    if response.status != 200:
+                        logger.warning("Distributor health check failed, attempting to re-register")
+                        await register_with_distributor()
+                except Exception as e:
+                    logger.error(f"Health check failed: {str(e)}")
+                    await register_with_distributor()
+        except Exception as e:
+            logger.error(f"Error in health check loop: {str(e)}")
+        
+        await asyncio.sleep(30)  # Check every 30 seconds
 
 @app.get("/health")
 async def health_check():

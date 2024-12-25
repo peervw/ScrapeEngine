@@ -64,19 +64,20 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
         
         # Reduced timeout values
         timeout = ClientTimeout(
-            total=10,
-            connect=3,
-            sock_read=7
+            total=15,
+            connect=5,
+            sock_read=10
         )
         
         # Connector settings optimized for proxy rotation and stealth
         connector = aiohttp.TCPConnector(
-            force_close=True,        # Important for proxy rotation
+            force_close=True,
             enable_cleanup_closed=True,
             ssl=False,
             limit_per_host=5,
             use_dns_cache=True,
-            ttl_dns_cache=300
+            ttl_dns_cache=300,
+            resolver=aiohttp.AsyncResolver()
         )
         
         # Minimal delay only if stealth is enabled
@@ -89,10 +90,28 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
             timeout=timeout,
             trust_env=True
         ) as session:
+            # Try without proxy first if proxy is failing
+            if proxy:
+                try:
+                    async with session.get(
+                        url,
+                        proxy=f"http://{proxy[0]}:{proxy[1]}",
+                        proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if len(proxy) == 4 else None,
+                        allow_redirects=True,
+                        max_redirects=2,
+                        timeout=timeout,
+                        verify_ssl=False
+                    ) as response:
+                        if response.status != 200:
+                            raise ClientError(f"HTTP {response.status}")
+                        
+                        return await response.text()
+                except Exception as e:
+                    logger.error(f"Proxy scraping failed, trying without proxy: {str(e)}")
+            
+            # Try without proxy as fallback
             async with session.get(
                 url,
-                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
-                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
                 allow_redirects=True,
                 max_redirects=2,
                 timeout=timeout,
@@ -107,112 +126,266 @@ async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str
         logger.error(f"Scraping error for {url}: {str(e)}")
         raise
 
-async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str, str]] = None):
-    """Performance-optimized Playwright setup"""
-    browser_type = 'chromium'
+class PlaywrightManager:
+    """Singleton class to manage Playwright browser instances"""
+    _instance = None
+    _initialized = False
+    _lock = asyncio.Lock()
+    _browser = None
+    _playwright = None
+    _context_lock = asyncio.Lock()
     
-    browser_args = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--disable-extensions',
-    ]
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=browser_args,
-        proxy={
-            "server": f"http://{proxy[0]}:{proxy[1]}",
-            "username": proxy[2],
-            "password": proxy[3]
-        } if proxy and len(proxy) == 4 else None
-    )
+    async def initialize(self):
+        """Initialize Playwright if not already initialized"""
+        if not self._initialized:
+            async with self._lock:
+                if not self._initialized:  # Double check pattern
+                    try:
+                        self._playwright = await async_playwright().start()
+                        if not self._playwright:
+                            raise Exception("Failed to initialize Playwright")
+                            
+                        # Launch persistent browser with minimal args
+                        self._browser = await self._playwright.chromium.launch(
+                            headless=True,
+                            args=[
+                                '--no-sandbox',
+                                '--disable-setuid-sandbox',
+                                '--disable-dev-shm-usage',
+                                '--disable-gpu',
+                                '--single-process',
+                                '--disable-web-security',
+                                '--disable-features=site-per-process',
+                                '--no-zygote'
+                            ]
+                        )
+                        if not self._browser:
+                            raise Exception("Failed to launch browser")
+                            
+                        # Create a test context and page to verify everything works
+                        try:
+                            async with self._context_lock:
+                                test_context = await self._browser.new_context(
+                                    viewport={'width': 1920, 'height': 1080},
+                                    user_agent=USER_AGENTS[0]
+                                )
+                                test_page = await test_context.new_page()
+                                await test_page.goto('about:blank', wait_until='domcontentloaded')
+                                await test_page.close()
+                                await test_context.close()
+                        except Exception as e:
+                            logger.error(f"Browser verification failed: {str(e)}")
+                            await self.cleanup()
+                            raise
+                            
+                        self._initialized = True
+                        logger.info("Playwright manager initialized successfully")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize Playwright manager: {str(e)}")
+                        await self.cleanup()  # Clean up any partially initialized resources
+                        raise
     
-    context = await browser.new_context(
-        viewport={'width': 1920, 'height': 1080},
-        user_agent=random.choice(USER_AGENTS),
-        locale='en-US',
-        timezone_id='America/New_York',
-    )
+    async def get_context(self, proxy: Optional[Tuple[str, str, str, str]] = None):
+        """Get a new browser context with optional proxy"""
+        await self.initialize()  # Ensure initialization
+        
+        if not self._browser:
+            raise Exception("Browser not initialized")
+        
+        async with self._context_lock:
+            context_options = {
+                'viewport': {'width': 1920, 'height': 1080},
+                'user_agent': random.choice(USER_AGENTS),
+                'locale': 'en-US',
+                'timezone_id': 'America/New_York',
+                'bypass_csp': True
+            }
+            
+            if proxy and len(proxy) >= 2:
+                proxy_config = {
+                    "server": f"http://{proxy[0]}:{proxy[1]}"
+                }
+                if len(proxy) == 4:
+                    proxy_config.update({
+                        "username": proxy[2],
+                        "password": proxy[3]
+                    })
+                context_options["proxy"] = proxy_config
+                
+            try:
+                context = await self._browser.new_context(**context_options)
+                if not context:
+                    raise Exception("Failed to create browser context")
+                return context
+            except Exception as e:
+                logger.error(f"Failed to create context: {str(e)}")
+                # Try to reinitialize if context creation fails
+                await self.cleanup()
+                await self.initialize()
+                context = await self._browser.new_context(**context_options)
+                if not context:
+                    raise Exception("Failed to create browser context after reinitialization")
+                return context
     
-    await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    """)
-    
-    return browser, context
+    async def cleanup(self):
+        """Cleanup Playwright resources"""
+        async with self._lock:
+            try:
+                if self._browser:
+                    await self._browser.close()
+                    self._browser = None
+                if self._playwright:
+                    await self._playwright.stop()
+                    self._playwright = None
+                self._initialized = False
+            except Exception as e:
+                logger.error(f"Error during Playwright cleanup: {str(e)}")
+                # Reset state even if cleanup fails
+                self._browser = None
+                self._playwright = None
+                self._initialized = False
+
+# Initialize the singleton
+playwright_manager = PlaywrightManager()
 
 async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, str]] = None) -> str:
     """Performance-optimized Playwright scraping"""
-    async with async_playwright() as playwright:
-        browser, context = await setup_stealth_browser(playwright, proxy)
+    context = None
+    page = None
+    
+    try:
+        # Get browser context
+        context = await playwright_manager.get_context(proxy)
+        if not context:
+            raise Exception("Failed to create browser context")
         
+        # Create page
+        page = await context.new_page()
+        if not page:
+            raise Exception("Failed to create new page")
+        
+        # Configure page settings
+        await page.set_default_navigation_timeout(30000)  # Increased timeout
+        await asyncio.sleep(MINIMAL_DELAY)
+        
+        # Navigate and get content
         try:
-            page = await context.new_page()
-            await page.set_default_navigation_timeout(20000)
-            
-            await asyncio.sleep(MINIMAL_DELAY)
-            
-            response = await page.goto(url, wait_until='domcontentloaded')
-            
+            response = await page.goto(url, wait_until='networkidle', timeout=30000)
+            if not response:
+                raise Exception("Navigation failed with no response")
             if not response.ok:
-                raise Exception(f"HTTP {response.status}")
+                raise Exception(f"Navigation failed with status {response.status}")
+            
+            # Wait for any dynamic content
+            await asyncio.sleep(1)
             
             content = await page.content()
-            return content
+            if not content:
+                raise Exception("Failed to get page content")
             
-        finally:
-            await context.close()
-            await browser.close()
+            return content
+        except Exception as e:
+            logger.error(f"Navigation error for {url}: {str(e)}")
+            raise
+            
+    except Exception as e:
+        logger.error(f"Playwright scraping error for {url}: {str(e)}")
+        raise
+        
+    finally:
+        # Cleanup resources in reverse order
+        if page:
+            try:
+                await page.close()
+            except Exception as e:
+                logger.error(f"Error closing page: {str(e)}")
+        
+        if context:
+            try:
+                await context.close()
+            except Exception as e:
+                logger.error(f"Error closing context: {str(e)}")
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
-    method = task_data.get('method', 'simple')
     proxy = task_data.get('proxy')
     stealth = task_data.get('stealth', False)
+    render = task_data.get('render', False)
     should_parse = task_data.get('parse', True)
     
     start_time = datetime.now()
+    retries = 2
+    last_error = None
     
-    try:
-        if method == 'advanced':
-            content = await scrape_with_playwright(url, proxy)
-            method_used = 'playwright'
-        else:
-            content = await scrape_with_aiohttp(url, proxy, stealth)
-            method_used = 'aiohttp'
-        
-        result = {
-            'status': 'success',
-            'scrape_time': (datetime.now() - start_time).total_seconds(),
-            'method_used': method_used,
-        }
+    for attempt in range(retries + 1):
+        try:
+            # Use playwright if render is True or if stealth mode is enabled
+            use_playwright = render or stealth
             
-        # Handle different content return scenarios
-        if task_data.get('full_content') == 'yes':
-            result['html'] = content
-            
-        if should_parse:
-            # Only parse if explicitly requested
-            soup = BeautifulSoup(content, 'html.parser')
-            result.update({
-                'title': soup.title.string if soup.title else None,
-                'text_content': ' '.join(soup.stripped_strings),
-                'links': [{'href': a.get('href'), 'text': a.text} 
-                         for a in soup.find_all('a', href=True)]
-            })
-        else:
-            # Return minimal parsed content
+            try:
+                if use_playwright:
+                    try:
+                        # Initialize Playwright manager first
+                        await playwright_manager.initialize()
+                        content = await scrape_with_playwright(url, proxy)
+                        method_used = 'playwright'
+                    except Exception as e:
+                        logger.error(f"Playwright scraping failed (attempt {attempt + 1}/{retries + 1}): {str(e)}")
+                        if not (stealth or render) and attempt == retries:  # Only fallback if neither stealth nor render required
+                            logger.info("Falling back to aiohttp")
+                            content = await scrape_with_aiohttp(url, proxy, stealth=False)
+                            method_used = 'aiohttp'
+                        else:
+                            raise  # Re-raise if stealth/render is required or not last attempt
+                else:
+                    content = await scrape_with_aiohttp(url, proxy, stealth)
+                    method_used = 'aiohttp'
+                    
+            except Exception as e:
+                logger.error(f"Primary scraping method failed (attempt {attempt + 1}/{retries + 1}), error: {str(e)}")
+                last_error = e
+                if attempt < retries:  # Only sleep and retry if not last attempt
+                    await asyncio.sleep(random.uniform(1, 3))  # Random backoff
+                    continue
+                raise
+
+            result = {
+                'status': 'success',
+                'scrape_time': (datetime.now() - start_time).total_seconds(),
+                'method_used': method_used,
+            }
+                
+            # Always include raw content
             result['raw_content'] = content
+                
+            if should_parse:
+                try:
+                    # Only parse if explicitly requested
+                    soup = BeautifulSoup(content, 'html.parser')
+                    result.update({
+                        'title': soup.title.string if soup.title else None,
+                        'text_content': ' '.join(soup.stripped_strings),
+                        'links': [{'href': a.get('href'), 'text': a.text} 
+                                 for a in soup.find_all('a', href=True)]
+                    })
+                except Exception as e:
+                    logger.error(f"Parsing failed: {str(e)}")
+                    result['parse_error'] = str(e)
+                
+            return result
+                
+        except Exception as e:
+            last_error = e
+            if attempt < retries:
+                logger.warning(f"Scraping attempt {attempt + 1}/{retries + 1} failed, retrying...")
+                await asyncio.sleep(random.uniform(1, 3))  # Random backoff
+                continue
             
-        return result
-        
-    except Exception as e:
-        logger.error(f"Scraping failed for {url}: {str(e)}")
-        return {
-            'status': 'error',
-            'error': str(e),
-            'scrape_time': (datetime.now() - start_time).total_seconds()
-        }
+    logger.error(f"All scraping attempts failed for {url}: {str(last_error)}")
+    raise last_error

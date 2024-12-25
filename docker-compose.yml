@@ -1,44 +1,86 @@
+version: '3.8'
+
 services:
   distributor:
-    build:
-      context: ./Distributor
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+    build: ./Distributor
+    ports:
+      - "8080:8080"
     environment:
-      - PYTHONUNBUFFERED=1
+      - WEBSHARE_TOKEN=${WEBSHARE_TOKEN}
+      - DEBUG=${DEBUG:-false}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=scrapeengine
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - scrapeengine
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/public"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    volumes:
-      - ./Distributor:/app
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
-    networks:
-      - scrape_network
 
   runner:
-    build:
-      context: ./Runner
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+    build: ./Runner
     environment:
-      - PYTHONUNBUFFERED=1
-      - RUNNER_ID=runner-${HOSTNAME:-runner}
       - DISTRIBUTOR_URL=http://distributor:8080
+      - DEBUG=${DEBUG:-false}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=scrapeengine
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    deploy:
+      replicas: ${RUNNER_REPLICAS:-3}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - scrapeengine
+    restart: unless-stopped
+
+  frontend:
+    build: ./Frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - INTERNAL_API_URL=http://distributor:8080
     depends_on:
       distributor:
         condition: service_healthy
-    volumes:
-      - ./Runner:/app
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
     networks:
-      - scrape_network
+      - scrapeengine
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    command: postgres -c 'password_encryption=scram-sha-256' -c 'listen_addresses=*'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+    volumes:
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    networks:
+      - scrapeengine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
 
 networks:
-  scrape_network:
+  scrapeengine:
     driver: bridge

@@ -3,10 +3,8 @@ from typing import Tuple, Optional, Dict, Any, Literal
 
 class ScrapeRequest(BaseModel):
     url: HttpUrl
-    full_content: str = "no"  # yes/no
-    method: Literal["aiohttp", "playwright"] = "aiohttp"  # Choose scraping method
     stealth: bool = False     # Enable stealth mode
-    cache: bool = True
-    parse: bool = True
+    render: bool = False      # Use Playwright when True
+    parse: bool = True       # Parse the content
     proxy: Tuple[str, str, str, str]
     headers: Optional[Dict[str, str]] = None

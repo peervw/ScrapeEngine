@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 import asyncio
 from fastapi import HTTPException
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,7 @@ class ProxyManager:
         self.webshare_token = os.getenv('WEBSHARE_TOKEN')
         self.proxies: Dict[str, dict] = {}  # host -> proxy_data
         self.available_proxies: List[str] = []  # list of hosts
+        self.performance_window = 50  # Number of requests to calculate average response time
         
     async def add_proxy(self, proxy: Tuple[str, str, str, str]):
         """Add a proxy to memory with metadata"""
@@ -24,21 +26,33 @@ class ProxyManager:
             "password": proxy[3],
             "last_used": None,
             "failures": 0,
-            "success_rate": 1.0
+            "success_rate": 1.0,
+            "response_times": [],  # Track last N response times
+            "avg_response_time": None
         }
         self.available_proxies.append(host)
         logger.debug(f"Added proxy {host}")
         
     async def get_next_proxy(self) -> Tuple[str, str, str, str]:
-        """Get next available proxy using round-robin"""
+        """Get next available proxy using performance-based selection"""
         if not self.available_proxies:
             await self.refresh_proxies()
             if not self.available_proxies:
                 raise HTTPException(status_code=503, detail="No proxies available")
         
-        # Round-robin selection
-        host = self.available_proxies.pop(0)
-        self.available_proxies.append(host)
+        # Sort proxies by performance score (combination of success rate and speed)
+        sorted_proxies = sorted(
+            self.available_proxies,
+            key=lambda x: (
+                self.proxies[x]["success_rate"],
+                -1 * (self.proxies[x]["avg_response_time"] or float("inf"))
+            ),
+            reverse=True
+        )
+        
+        # Select from top 20% of proxies randomly to prevent overuse
+        selection_pool = sorted_proxies[:max(1, len(sorted_proxies) // 5)]
+        host = random.choice(selection_pool)
         
         proxy_data = self.proxies[host]
         proxy_data["last_used"] = datetime.now().isoformat()
@@ -101,22 +115,30 @@ class ProxyManager:
                 logger.error(f"Error in proxy maintenance: {e}")
                 await asyncio.sleep(60)
 
-    async def mark_proxy_result(self, host: str, success: bool):
-        """Mark proxy success/failure for tracking"""
+    async def update_proxy_metrics(self, host: str, response_time: float, success: bool):
+        """Update proxy performance metrics"""
         if host in self.proxies:
             proxy = self.proxies[host]
+            
+            # Update response times
+            proxy["response_times"].append(response_time)
+            if len(proxy["response_times"]) > self.performance_window:
+                proxy["response_times"].pop(0)
+            
+            # Update average response time
+            proxy["avg_response_time"] = sum(proxy["response_times"]) / len(proxy["response_times"])
+            
+            # Update success metrics
             if success:
-                # Successful request - improve success rate
                 proxy["success_rate"] = min(1.0, proxy["success_rate"] + 0.1)
                 proxy["failures"] = max(0, proxy["failures"] - 1)
             else:
-                # Failed request - decrease success rate and increment failures
                 proxy["success_rate"] = max(0.0, proxy["success_rate"] - 0.2)
                 proxy["failures"] += 1
                 
-                # Remove proxy if too many failures or low success rate
-                if proxy["failures"] > 5 or proxy["success_rate"] < 0.3:
-                    self.proxies.pop(host, None)
-                    if host in self.available_proxies:
-                        self.available_proxies.remove(host)
-                    logger.warning(f"Removed failing proxy {host}")
+            # Remove proxy if too many failures or low success rate
+            if proxy["failures"] > 5 or proxy["success_rate"] < 0.3:
+                self.proxies.pop(host, None)
+                if host in self.available_proxies:
+                    self.available_proxies.remove(host)
+                logger.warning(f"Removed failing proxy {host}")

@@ -1,7 +1,10 @@
-fastapi
-uvicorn
-aiohttp
-beautifulsoup4
-playwright
-tenacity
-python-dotenv
+fastapi==0.105.0
+uvicorn==0.24.0
+aiohttp==3.9.1
+beautifulsoup4==4.12.2
+playwright==1.40.0
+tenacity==8.2.3
+python-dotenv==1.0.0
+aiodns==3.1.1
+pycares==4.4.0  # Required by aiodns
+psycopg2-binary==2.9.9

@@ -1,0 +1,8 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "@typescript-eslint/no-unused-vars": ["error", {
+      "varsIgnorePattern": "^(API_BASE_URL|INTERNAL_API_URL)$"
+    }]
+  }
+} 

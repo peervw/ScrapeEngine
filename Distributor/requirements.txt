@@ -1,7 +1,9 @@
-fastapi
-uvicorn
+fastapi==0.104.1
+uvicorn==0.24.0
 pydantic
 pydantic-settings==2.1.0
-aiohttp
-python-dotenv
+aiohttp==3.9.1
+python-dotenv==1.0.0
 setuptools
+psutil==5.9.6
+psycopg2-binary==2.9.9

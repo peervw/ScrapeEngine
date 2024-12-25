@@ -36,7 +36,8 @@ class RunnerManager:
             self.runners[runner_id] = {
                 "url": url,
                 "status": "active",
-                "registered_at": datetime.now().isoformat()
+                "registered_at": datetime.now().isoformat(),
+                "failures": 0  # Track consecutive failures
             }
             logger.info(f"Runner {runner_id} registered successfully. Total runners: {len(self.runners)}")
             logger.info(f"Current runners: {list(self.runners.keys())}")
@@ -44,7 +45,7 @@ class RunnerManager:
         except Exception as e:
             logger.error(f"Failed to register runner {runner_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
-        
+            
     async def distribute_task(self, task_data: dict):
         """Distribute task to a random available runner"""
         if not self.runners:
@@ -56,7 +57,11 @@ class RunnerManager:
         random.shuffle(runner_items)
         
         # Try runners in random order until one succeeds
+        last_error = None
         for runner_id, runner_info in runner_items:
+            if runner_info.get("failures", 0) >= 3:  # Skip runners with too many failures
+                continue
+                
             logger.info(f"Attempting to distribute task to runner {runner_id}")
             
             async with aiohttp.ClientSession() as session:
@@ -68,14 +73,23 @@ class RunnerManager:
                     ) as response:
                         if response.status != 200:
                             logger.error(f"Runner {runner_id} failed with status {response.status}")
-                            self.runners.pop(runner_id, None)
+                            runner_info["failures"] = runner_info.get("failures", 0) + 1
+                            if runner_info["failures"] >= 3:
+                                self.runners.pop(runner_id, None)
                             continue
+                            
                         result = await response.json()
                         logger.info(f"Task completed successfully by runner {runner_id}")
+                        runner_info["failures"] = 0  # Reset failure count on success
                         return result
                 except Exception as e:
                     logger.error(f"Runner {runner_id} failed with error: {e}")
-                    self.runners.pop(runner_id, None)
+                    last_error = e
+                    runner_info["failures"] = runner_info.get("failures", 0) + 1
+                    if runner_info["failures"] >= 3:
+                        self.runners.pop(runner_id, None)
                     continue
         
-        raise HTTPException(status_code=503, detail="All runners failed")
+        # If we get here, all runners failed
+        error_msg = str(last_error) if last_error else "All runners failed"
+        raise HTTPException(status_code=503, detail=error_msg)
