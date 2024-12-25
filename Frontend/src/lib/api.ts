@@ -99,6 +99,28 @@ export interface LogsResponse {
   logs: ScrapeLog[];
 }
 
+export interface ProxyStats {
+  host: string;
+  port: string;
+  last_used: string | null;
+  success_rate: number;
+  avg_response_time: number | null;
+  failures: number;
+}
+
+export interface ProxyListResponse {
+  total_proxies: number;
+  available_proxies: number;
+  proxies: ProxyStats[];
+}
+
+export interface ProxyCreate {
+  host: string;
+  port: string;
+  username?: string;
+  password?: string;
+}
+
 class ApiClient {
   private apiKey: string | null = null;
   private baseUrl: string;
@@ -201,6 +223,36 @@ class ApiClient {
     }, false);
     this.apiKey = response.key;
     return response;
+  }
+
+  async getProxies(): Promise<ProxyListResponse> {
+    return this.fetch<ProxyListResponse>('/proxies');
+  }
+
+  async addProxy(proxy: ProxyCreate): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>('/proxies', {
+      method: 'POST',
+      body: JSON.stringify(proxy),
+    });
+  }
+
+  async deleteProxy(host: string): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>(`/proxies/${encodeURIComponent(host)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async setWebshareToken(token: string): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>('/proxies/webshare', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async refreshProxies(): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>('/proxies/refresh', {
+      method: 'POST',
+    });
   }
 }
 

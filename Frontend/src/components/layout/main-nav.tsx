@@ -22,6 +22,10 @@ const items = [
     href: "/system",
   },
   {
+    title: "Proxies",
+    href: "/proxies",
+  },
+  {
     title: "New Scrape",
     href: "/scrape",
   },

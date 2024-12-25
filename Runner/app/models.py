@@ -6,5 +6,5 @@ class ScrapeRequest(BaseModel):
     stealth: bool = False     # Enable stealth mode
     render: bool = False      # Use Playwright when True
     parse: bool = True       # Parse the content
-    proxy: Tuple[str, str, str, str]
+    proxy: Optional[Tuple[str, str, str, str]] = None
     headers: Optional[Dict[str, str]] = None

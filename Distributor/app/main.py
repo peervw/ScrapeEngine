@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Query
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, Body
 from typing import Optional, List
 from .services.proxy_manager import ProxyManager
 from .services.runner_manager import RunnerManager
@@ -15,10 +15,21 @@ from datetime import datetime, timedelta
 import json
 from fastapi.middleware.cors import CORSMiddleware
 import time
+from pydantic import BaseModel
 
 # Setup logging first
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# New Pydantic models for proxy management
+class ProxyCreate(BaseModel):
+    host: str
+    port: str
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+class WebshareToken(BaseModel):
+    token: str
 
 def get_db_connection():
     """Get a PostgreSQL database connection with retries"""
@@ -95,6 +106,11 @@ def init_db():
             VALUES ('log_retention_days', '30')
             ON CONFLICT (key) DO NOTHING
         ''')
+        c.execute('''
+            INSERT INTO settings (key, value)
+            VALUES ('webshare_token', '')
+            ON CONFLICT (key) DO NOTHING
+        ''')
         
         # Generate initial API key if none exists
         c.execute('SELECT COUNT(*) FROM api_keys')
@@ -119,6 +135,15 @@ async def lifespan(app: FastAPI):
         
         app.state.runner_manager = RunnerManager()
         app.state.proxy_manager = ProxyManager()
+        
+        # Load Webshare token from settings
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('SELECT value FROM settings WHERE key = %s', ('webshare_token',))
+        result = c.fetchone()
+        if result:
+            await app.state.proxy_manager.set_webshare_token(result[0])
+        conn.close()
         
         logger.info("Starting proxy maintenance task")
         asyncio.create_task(app.state.proxy_manager.start_proxy_maintenance())
@@ -233,7 +258,12 @@ async def scrape_endpoint(
 ):
     try:
         start_time = datetime.now()
-        proxy = await app.state.proxy_manager.get_next_proxy()
+        try:
+            proxy = await app.state.proxy_manager.get_next_proxy()
+        except Exception as e:
+            logger.warning(f"Failed to get proxy: {e}, proceeding without proxy")
+            proxy = None
+            
         task_data = {
             "url": str(request.url),
             "stealth": request.stealth,
@@ -249,7 +279,8 @@ async def scrape_endpoint(
         
         # Check if the scraping failed
         if result.get("status") == "error":
-            await app.state.proxy_manager.update_proxy_metrics(proxy[0], response_time, False)
+            if proxy:  # Only update proxy metrics if a proxy was used
+                await app.state.proxy_manager.update_proxy_metrics(proxy[0], response_time, False)
             # Store error log
             log_data = {
                 "timestamp": start_time.isoformat(),
@@ -263,15 +294,16 @@ async def scrape_endpoint(
                     "stealth": request.stealth,
                     "render": request.render,
                     "parse": request.parse,
-                    "proxy": f"{proxy[0]}:{proxy[1]}"
+                    "proxy": f"{proxy[0]}:{proxy[1]}" if proxy else "none"
                 },
                 "error": result.get("error")
             }
             store_log(log_data)
             raise HTTPException(status_code=500, detail=result.get("error", "Scraping failed"))
-        
-        # Update proxy metrics with response time
-        await app.state.proxy_manager.update_proxy_metrics(proxy[0], response_time, True)
+            
+        # Update proxy metrics with response time if proxy was used
+        if proxy:
+            await app.state.proxy_manager.update_proxy_metrics(proxy[0], response_time, True)
         
         # Store success log
         logger.debug(f"Raw result from runner: {result}")
@@ -282,7 +314,7 @@ async def scrape_endpoint(
             "stealth": request.stealth,
             "render": request.render,
             "parse": request.parse,
-            "proxy_used": f"{proxy[0]}:{proxy[1]}",
+            "proxy_used": f"{proxy[0]}:{proxy[1]}" if proxy else "none",
             "runner_used": result.get("runner_id", "unknown"),
             "method_used": result.get("method_used", "aiohttp"),
             "response_time": response_time,
@@ -308,10 +340,10 @@ async def scrape_endpoint(
                 "stealth": request.stealth,
                 "render": request.render,
                 "parse": request.parse,
-                "proxy": f"{proxy[0]}:{proxy[1]}"
+                "proxy": f"{proxy[0]}:{proxy[1]}" if proxy else "none"
             },
             "result": {
-                "proxy_used": f"{proxy[0]}:{proxy[1]}",
+                "proxy_used": f"{proxy[0]}:{proxy[1]}" if proxy else "none",
                 "runner_used": result.get("runner_id", "unknown"),
                 "method_used": result.get("method_used", "aiohttp"),
                 "response_time": response_time,
@@ -332,7 +364,7 @@ async def scrape_endpoint(
             
     except Exception as e:
         logger.error(f"Scrape error: {e}")
-        if 'proxy' in locals():
+        if 'proxy' in locals() and proxy:
             end_time = datetime.now()
             response_time = (end_time - start_time).total_seconds()
             await app.state.proxy_manager.update_proxy_metrics(proxy[0], response_time, False)
@@ -664,3 +696,67 @@ async def regenerate_api_key():
     conn.close()
     
     return {"key": new_key}
+
+@app.get("/api/proxies")
+async def get_proxies(authorization: str = Depends(token_required)):
+    """Get all proxies and their stats"""
+    proxy_manager = app.state.proxy_manager
+    return {
+        "total_proxies": len(proxy_manager.proxies),
+        "available_proxies": len(proxy_manager.available_proxies),
+        "proxies": proxy_manager.get_proxy_stats()
+    }
+
+@app.post("/api/proxies")
+async def add_proxy(proxy: ProxyCreate, authorization: str = Depends(token_required)):
+    """Add a proxy manually"""
+    proxy_manager = app.state.proxy_manager
+    try:
+        await proxy_manager.add_manual_proxy(
+            proxy.host,
+            proxy.port,
+            proxy.username,
+            proxy.password
+        )
+        return {"status": "success", "message": f"Added proxy {proxy.host}:{proxy.port}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/proxies/{host}")
+async def delete_proxy(host: str, authorization: str = Depends(token_required)):
+    """Delete a proxy"""
+    proxy_manager = app.state.proxy_manager
+    await proxy_manager.delete_proxy(host)
+    return {"status": "success", "message": f"Deleted proxy {host}"}
+
+@app.post("/api/proxies/webshare")
+async def set_webshare_token(token: WebshareToken, authorization: str = Depends(token_required)):
+    """Set Webshare API token and refresh proxies"""
+    proxy_manager = app.state.proxy_manager
+    try:
+        # Store token in database
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO settings (key, value) 
+            VALUES ('webshare_token', %s) 
+            ON CONFLICT (key) DO UPDATE SET value = %s
+        ''', (token.token, token.token))
+        conn.commit()
+        conn.close()
+
+        # Update proxy manager
+        await proxy_manager.set_webshare_token(token.token)
+        return {"status": "success", "message": "Updated Webshare token and refreshed proxies"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/proxies/refresh")
+async def refresh_proxies(authorization: str = Depends(token_required)):
+    """Manually trigger proxy refresh from Webshare"""
+    proxy_manager = app.state.proxy_manager
+    try:
+        await proxy_manager.refresh_proxies()
+        return {"status": "success", "message": "Refreshed proxies from Webshare"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

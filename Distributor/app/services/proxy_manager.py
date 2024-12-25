@@ -1,7 +1,6 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import aiohttp
 import logging
-import os
 from datetime import datetime
 import asyncio
 from fastapi import HTTPException
@@ -11,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class ProxyManager:
     def __init__(self):
-        self.webshare_token = os.getenv('WEBSHARE_TOKEN')
+        self.webshare_token = None
         self.proxies: Dict[str, dict] = {}  # host -> proxy_data
         self.available_proxies: List[str] = []  # list of hosts
         self.performance_window = 50  # Number of requests to calculate average response time
@@ -33,12 +32,11 @@ class ProxyManager:
         self.available_proxies.append(host)
         logger.debug(f"Added proxy {host}")
         
-    async def get_next_proxy(self) -> Tuple[str, str, str, str]:
-        """Get next available proxy using performance-based selection"""
+    async def get_next_proxy(self) -> Optional[Tuple[str, str, str, str]]:
+        """Get next available proxy using performance-based selection, returns None if no proxies available"""
         if not self.available_proxies:
-            await self.refresh_proxies()
-            if not self.available_proxies:
-                raise HTTPException(status_code=503, detail="No proxies available")
+            logger.info("No proxies available, proceeding without proxy")
+            return None
         
         # Sort proxies by performance score (combination of success rate and speed)
         sorted_proxies = sorted(
@@ -66,6 +64,10 @@ class ProxyManager:
 
     async def refresh_proxies(self):
         """Refresh proxy list from Webshare"""
+        if not self.webshare_token:
+            logger.info("No Webshare token configured, skipping proxy refresh")
+            return
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -109,7 +111,8 @@ class ProxyManager:
     async def start_proxy_maintenance(self):
         while True:
             try:
-                await self.refresh_proxies()
+                if self.webshare_token:
+                    await self.refresh_proxies()
                 await asyncio.sleep(3600)  # 1 hour
             except Exception as e:
                 logger.error(f"Error in proxy maintenance: {e}")
@@ -117,28 +120,69 @@ class ProxyManager:
 
     async def update_proxy_metrics(self, host: str, response_time: float, success: bool):
         """Update proxy performance metrics"""
+        if not host or host not in self.proxies:
+            return
+            
+        proxy = self.proxies[host]
+        
+        # Update response times
+        proxy["response_times"].append(response_time)
+        if len(proxy["response_times"]) > self.performance_window:
+            proxy["response_times"].pop(0)
+        
+        # Update average response time
+        proxy["avg_response_time"] = sum(proxy["response_times"]) / len(proxy["response_times"])
+        
+        # Update success metrics
+        if success:
+            proxy["success_rate"] = min(1.0, proxy["success_rate"] + 0.1)
+            proxy["failures"] = max(0, proxy["failures"] - 1)
+        else:
+            proxy["success_rate"] = max(0.0, proxy["success_rate"] - 0.2)
+            proxy["failures"] += 1
+            
+        # Remove proxy if too many failures or low success rate
+        if proxy["failures"] > 5 or proxy["success_rate"] < 0.3:
+            self.proxies.pop(host, None)
+            if host in self.available_proxies:
+                self.available_proxies.remove(host)
+            logger.warning(f"Removed failing proxy {host}")
+
+    def get_proxy_stats(self) -> List[dict]:
+        """Get statistics for all proxies"""
+        return [
+            {
+                "host": proxy_data["host"],
+                "port": proxy_data["port"],
+                "last_used": proxy_data["last_used"],
+                "success_rate": proxy_data["success_rate"],
+                "avg_response_time": proxy_data["avg_response_time"],
+                "failures": proxy_data["failures"]
+            }
+            for proxy_data in self.proxies.values()
+        ]
+
+    async def set_webshare_token(self, token: str):
+        """Set the Webshare API token and refresh proxies"""
+        self.webshare_token = token
+        if token:
+            await self.refresh_proxies()
+        else:
+            self.proxies.clear()
+            self.available_proxies.clear()
+
+    async def add_manual_proxy(self, host: str, port: str, username: str = None, password: str = None):
+        """Add a proxy manually"""
+        await self.add_proxy((host, port, username, password))
+
+    async def delete_proxy(self, host: str):
+        """Delete a proxy by host"""
         if host in self.proxies:
-            proxy = self.proxies[host]
-            
-            # Update response times
-            proxy["response_times"].append(response_time)
-            if len(proxy["response_times"]) > self.performance_window:
-                proxy["response_times"].pop(0)
-            
-            # Update average response time
-            proxy["avg_response_time"] = sum(proxy["response_times"]) / len(proxy["response_times"])
-            
-            # Update success metrics
-            if success:
-                proxy["success_rate"] = min(1.0, proxy["success_rate"] + 0.1)
-                proxy["failures"] = max(0, proxy["failures"] - 1)
-            else:
-                proxy["success_rate"] = max(0.0, proxy["success_rate"] - 0.2)
-                proxy["failures"] += 1
-                
-            # Remove proxy if too many failures or low success rate
-            if proxy["failures"] > 5 or proxy["success_rate"] < 0.3:
-                self.proxies.pop(host, None)
-                if host in self.available_proxies:
-                    self.available_proxies.remove(host)
-                logger.warning(f"Removed failing proxy {host}")
+            self.proxies.pop(host)
+            if host in self.available_proxies:
+                self.available_proxies.remove(host)
+            logger.info(f"Deleted proxy {host}")
+
+    def get_webshare_token(self) -> Optional[str]:
+        """Get the current Webshare API token"""
+        return self.webshare_token
