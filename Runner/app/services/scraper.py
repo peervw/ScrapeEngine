@@ -325,35 +325,28 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     
     for attempt in range(retries + 1):
         try:
-            # Use playwright if render is True or if stealth mode is enabled
-            use_playwright = render or stealth
-            
-            try:
-                if use_playwright:
-                    try:
-                        # Initialize Playwright manager first
-                        await playwright_manager.initialize()
-                        content = await scrape_with_playwright(url, proxy)
-                        method_used = 'playwright'
-                    except Exception as e:
-                        logger.error(f"Playwright scraping failed (attempt {attempt + 1}/{retries + 1}): {str(e)}")
-                        if not (stealth or render) and attempt == retries:  # Only fallback if neither stealth nor render required
-                            logger.info("Falling back to aiohttp")
-                            content = await scrape_with_aiohttp(url, proxy, stealth=False)
-                            method_used = 'aiohttp'
-                        else:
-                            raise  # Re-raise if stealth/render is required or not last attempt
-                else:
-                    content = await scrape_with_aiohttp(url, proxy, stealth)
+            # Only use playwright if render is true
+            if render:
+                try:
+                    # Initialize Playwright manager first
+                    await playwright_manager.initialize()
+                    content = await scrape_with_playwright(url, proxy)
+                    method_used = 'playwright'
+                except Exception as e:
+                    logger.error(f"Playwright scraping failed (attempt {attempt + 1}/{retries + 1}): {str(e)}")
+                    raise  # Always raise for Playwright as it's required for rendering
+            else:
+                try:
+                    # Use aiohttp with stealth mode only when stealth is True
+                    content = await scrape_with_aiohttp(url, proxy, stealth=stealth)
                     method_used = 'aiohttp'
-                    
-            except Exception as e:
-                logger.error(f"Primary scraping method failed (attempt {attempt + 1}/{retries + 1}), error: {str(e)}")
-                last_error = e
-                if attempt < retries:  # Only sleep and retry if not last attempt
-                    await asyncio.sleep(random.uniform(1, 3))  # Random backoff
-                    continue
-                raise
+                except Exception as e:
+                    logger.error(f"Aiohttp scraping failed (attempt {attempt + 1}/{retries + 1}): {str(e)}")
+                    last_error = e
+                    if attempt < retries:
+                        await asyncio.sleep(random.uniform(1, 3))  # Random backoff
+                        continue
+                    raise
 
             result = {
                 'status': 'success',
