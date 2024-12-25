@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -23,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import { Loader2, RefreshCcw, Trash2, Eye, EyeOff } from "lucide-react";
 import { api } from '@/lib/api';
 import type { ProxyStats, ProxyCreate } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
@@ -44,7 +46,10 @@ const ProxiesPage: React.FC = () => {
     username: '',
     password: '',
   });
+  const [bulkProxies, setBulkProxies] = useState('');
   const [webshareToken, setWebshareToken] = useState('');
+  const [currentWebshareToken, setCurrentWebshareToken] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
   const loadProxies = async () => {
     try {
@@ -78,6 +83,38 @@ const ProxiesPage: React.FC = () => {
     }
   };
 
+  const handleBulkImport = async () => {
+    try {
+      const lines = bulkProxies.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        const parts = line.split('@');
+        if (parts.length === 0) continue;
+
+        let host: string, port: string, username: string | undefined, password: string | undefined;
+
+        if (parts.length === 2) {
+          // Format: username:password@host:port
+          const [userPass, hostPort] = parts;
+          [username, password] = userPass.split(':');
+          [host, port] = hostPort.split(':');
+        } else {
+          // Format: host:port
+          [host, port] = parts[0].split(':');
+        }
+
+        if (host && port) {
+          await api.addProxy({ host, port, username, password });
+        }
+      }
+      setAddProxyOpen(false);
+      setBulkProxies('');
+      loadProxies();
+    } catch (error: unknown) {
+      setError('Failed to import proxies');
+      console.error('Error importing proxies:', error);
+    }
+  };
+
   const handleDeleteProxy = async (host: string) => {
     try {
       await api.deleteProxy(host);
@@ -93,12 +130,42 @@ const ProxiesPage: React.FC = () => {
       await api.setWebshareToken(webshareToken);
       setWebshareOpen(false);
       setWebshareToken('');
-      loadProxies();
+      await loadWebshareToken();
+      await loadProxies();
+      setError(null);
     } catch (err) {
       setError('Failed to set Webshare token');
       console.error('Error setting Webshare token:', err);
     }
   };
+
+  const handleClearWebshareToken = async () => {
+    try {
+      await api.setWebshareToken('');
+      await loadWebshareToken();
+      await loadProxies();
+      setError(null);
+    } catch (err) {
+      setError('Failed to clear Webshare token');
+      console.error('Error clearing Webshare token:', err);
+    }
+  };
+
+  const loadWebshareToken = async () => {
+    try {
+      const settings = await api.getSettings();
+      const token = settings.webshare_token;
+      setCurrentWebshareToken(token || null);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load Webshare token');
+      console.error('Error loading Webshare token:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadWebshareToken();
+  }, []);
 
   const handleRefreshProxies = async () => {
     try {
@@ -216,51 +283,81 @@ const ProxiesPage: React.FC = () => {
 
       {/* Add Proxy Dialog */}
       <Dialog open={addProxyOpen} onOpenChange={setAddProxyOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add Proxy</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="host">Host</Label>
-              <Input
-                id="host"
-                value={newProxy.host}
-                onChange={(e) => setNewProxy({ ...newProxy, host: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="port">Port</Label>
-              <Input
-                id="port"
-                value={newProxy.port}
-                onChange={(e) => setNewProxy({ ...newProxy, port: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="username">Username (optional)</Label>
-              <Input
-                id="username"
-                value={newProxy.username || ''}
-                onChange={(e) => setNewProxy({ ...newProxy, username: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password (optional)</Label>
-              <Input
-                id="password"
-                type="password"
-                value={newProxy.password || ''}
-                onChange={(e) => setNewProxy({ ...newProxy, password: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddProxyOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddProxy}>Add</Button>
-          </DialogFooter>
+          <Tabs defaultValue="single">
+            <TabsList>
+              <TabsTrigger value="single">Single Proxy</TabsTrigger>
+              <TabsTrigger value="bulk">Bulk Import</TabsTrigger>
+            </TabsList>
+            <TabsContent value="single" className="space-y-4">
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="host">Host</Label>
+                  <Input
+                    id="host"
+                    value={newProxy.host}
+                    onChange={(e) => setNewProxy({ ...newProxy, host: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="port">Port</Label>
+                  <Input
+                    id="port"
+                    value={newProxy.port}
+                    onChange={(e) => setNewProxy({ ...newProxy, port: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="username">Username (optional)</Label>
+                  <Input
+                    id="username"
+                    value={newProxy.username || ''}
+                    onChange={(e) => setNewProxy({ ...newProxy, username: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Password (optional)</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newProxy.password || ''}
+                    onChange={(e) => setNewProxy({ ...newProxy, password: e.target.value })}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddProxyOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddProxy}>Add</Button>
+              </DialogFooter>
+            </TabsContent>
+            <TabsContent value="bulk" className="space-y-4">
+              <div className="grid gap-2">
+                <Label>
+                  Bulk Import (one proxy per line)
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Format: host:port or username:password@host:port
+                  </div>
+                </Label>
+                <Textarea
+                  placeholder="proxy1.example.com:8080&#10;user:pass@proxy2.example.com:8080"
+                  value={bulkProxies}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBulkProxies(e.target.value)}
+                  rows={10}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setAddProxyOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleBulkImport}>Import</Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -268,16 +365,43 @@ const ProxiesPage: React.FC = () => {
       <Dialog open={webshareOpen} onOpenChange={setWebshareOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set Webshare API Token</DialogTitle>
+            <DialogTitle>Webshare API Token</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {currentWebshareToken && (
+              <div className="space-y-2">
+                <Label>Current Token</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type={showToken ? "text" : "password"}
+                    value={currentWebshareToken}
+                    readOnly
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowToken(!showToken)}
+                  >
+                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    onClick={handleClearWebshareToken}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="grid gap-2">
-              <Label htmlFor="token">API Token</Label>
+              <Label htmlFor="token">New API Token</Label>
               <Input
                 id="token"
                 type="password"
                 value={webshareToken}
                 onChange={(e) => setWebshareToken(e.target.value)}
+                placeholder={currentWebshareToken ? "Enter new token to update" : "Enter Webshare API token"}
               />
             </div>
           </div>

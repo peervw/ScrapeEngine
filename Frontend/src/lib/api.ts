@@ -90,6 +90,7 @@ export interface SystemMetrics {
 export interface SystemSettings {
   num_runners: string;
   log_retention_days: string;
+  webshare_token: string;
 }
 
 export interface LogsResponse {
@@ -203,14 +204,14 @@ class ApiClient {
   }
 
   async getSettings(): Promise<SystemSettings> {
-    return this.fetch<SystemSettings>('/settings', {}, false);
+    return this.fetch<SystemSettings>('/settings');
   }
 
-  async updateSettings(settings: Partial<SystemSettings>): Promise<{ status: string }> {
-    return this.fetch<{ status: string }>('/settings', {
+  async updateSettings(settings: Partial<SystemSettings>): Promise<{ message: string }> {
+    return this.fetch<{ message: string }>('/settings', {
       method: 'POST',
       body: JSON.stringify(settings),
-    }, false);
+    });
   }
 
   async getApiKey(): Promise<{ key: string }> {

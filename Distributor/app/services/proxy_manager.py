@@ -15,6 +15,19 @@ class ProxyManager:
         self.available_proxies: List[str] = []  # list of hosts
         self.performance_window = 50  # Number of requests to calculate average response time
         
+    async def initialize(self, db_connection):
+        """Initialize proxy manager with settings from database"""
+        try:
+            cursor = db_connection.cursor()
+            cursor.execute('SELECT value FROM settings WHERE key = %s', ('webshare_token',))
+            result = cursor.fetchone()
+            if result and result[0]:
+                await self.set_webshare_token(result[0])
+            cursor.close()
+        except Exception as e:
+            logger.error(f"Error initializing proxy manager: {e}")
+            raise
+        
     async def add_proxy(self, proxy: Tuple[str, str, str, str]):
         """Add a proxy to memory with metadata"""
         host = proxy[0]

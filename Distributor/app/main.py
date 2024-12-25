@@ -127,77 +127,34 @@ def init_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    logger.debug("Starting up distributor service...")
+    """Lifespan context manager for FastAPI app"""
+    # Initialize database
+    init_db()
+    
+    # Initialize proxy manager
+    proxy_manager = ProxyManager()
+    app.state.proxy_manager = proxy_manager
+    
+    # Initialize proxy manager with settings
+    conn = get_db_connection()
+    await proxy_manager.initialize(conn)
+    conn.close()
+    
+    # Start proxy maintenance task
+    proxy_maintenance_task = asyncio.create_task(proxy_manager.start_proxy_maintenance())
+    
+    # Initialize runner manager
+    runner_manager = RunnerManager()
+    app.state.runner_manager = runner_manager
+    
+    yield
+    
+    # Cleanup
+    proxy_maintenance_task.cancel()
     try:
-        # Initialize database
-        init_db()
-        
-        app.state.runner_manager = RunnerManager()
-        app.state.proxy_manager = ProxyManager()
-        
-        # Load Webshare token from settings
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute('SELECT value FROM settings WHERE key = %s', ('webshare_token',))
-        result = c.fetchone()
-        if result:
-            await app.state.proxy_manager.set_webshare_token(result[0])
-        conn.close()
-        
-        logger.info("Starting proxy maintenance task")
-        asyncio.create_task(app.state.proxy_manager.start_proxy_maintenance())
-        
-        # Start log cleanup task
-        async def cleanup_old_logs():
-            while True:
-                try:
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute('SELECT value FROM settings WHERE key = %s', ('log_retention_days',))
-                    result = c.fetchone()
-                    if not result:
-                        logger.warning("Log retention days setting not found, using default of 30 days")
-                        retention_days = 30
-                    else:
-                        retention_days = int(result[0])
-                    
-                    cutoff_date = datetime.now() - timedelta(days=retention_days)
-                    logger.info(f"Cleaning up logs older than {cutoff_date} (retention: {retention_days} days)")
-                    
-                    c.execute('DELETE FROM scrape_logs WHERE timestamp < %s', (cutoff_date,))
-                    deleted_count = c.rowcount
-                    conn.commit()
-                    logger.info(f"Cleaned up {deleted_count} old log entries")
-                    
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"Failed to cleanup logs: {e}", exc_info=True)
-                finally:
-                    try:
-                        conn.close()
-                    except:
-                        pass
-                await asyncio.sleep(24 * 60 * 60)  # Run once per day
-        
-        # Start the cleanup task
-        logger.info("Starting log cleanup task")
-        app.state.cleanup_task = asyncio.create_task(cleanup_old_logs())
-        logger.info("Startup complete")
-    except Exception as e:
-        logger.error(f"Startup failed: {e}", exc_info=True)
-        raise
-    
-    yield  # Server is running
-    
-    # Cleanup on shutdown
-    if hasattr(app.state, 'cleanup_task'):
-        logger.info("Cancelling log cleanup task")
-        app.state.cleanup_task.cancel()
-        try:
-            await app.state.cleanup_task
-        except asyncio.CancelledError:
-            pass
+        await proxy_maintenance_task
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(
     title="ScrapeEngine Distributor",
