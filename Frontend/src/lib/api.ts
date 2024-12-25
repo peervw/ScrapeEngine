@@ -27,6 +27,7 @@ export interface ScrapingResult {
 }
 
 export interface ScrapeLog {
+  id: number;
   timestamp: string;
   runner_id: string;
   status: 'success' | 'failed';
@@ -253,6 +254,18 @@ class ApiClient {
   async refreshProxies(): Promise<{ status: string; message: string }> {
     return this.fetch<{ status: string; message: string }>('/proxies/refresh', {
       method: 'POST',
+    });
+  }
+
+  async deleteAllLogs(): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>('/logs', {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteLog(logId: number): Promise<{ status: string; message: string }> {
+    return this.fetch<{ status: string; message: string }>(`/logs/${logId}`, {
+      method: 'DELETE',
     });
   }
 }

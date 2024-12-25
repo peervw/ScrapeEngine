@@ -717,3 +717,36 @@ async def refresh_proxies(authorization: str = Depends(token_required)):
         return {"status": "success", "message": "Refreshed proxies from Webshare"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/logs")
+async def delete_all_logs(authorization: str = Depends(token_required)):
+    """Delete all scraping logs from the database"""
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('DELETE FROM scrape_logs')
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": "All logs deleted successfully"}
+    except Exception as e:
+        logger.error(f"Failed to delete logs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete logs")
+
+@app.delete("/api/logs/{log_id}")
+async def delete_log(log_id: int, authorization: str = Depends(token_required)):
+    """Delete a specific log entry by ID"""
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('DELETE FROM scrape_logs WHERE id = %s RETURNING id', (log_id,))
+        deleted = c.fetchone()
+        conn.commit()
+        conn.close()
+        
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+            
+        return {"status": "success", "message": f"Log {log_id} deleted successfully"}
+    except Exception as e:
+        logger.error(f"Failed to delete log {log_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete log")
