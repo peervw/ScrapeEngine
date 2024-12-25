@@ -1,10 +1,11 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-export const revalidate = 15 // revalidate every 15 seconds
+import { Loader2 } from "lucide-react"
+import type { RunnerHealth } from "@/lib/api"
 
 function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / (24 * 60 * 60))
@@ -13,12 +14,50 @@ function formatUptime(seconds: number): string {
   return `${days}d ${hours}h ${minutes}m`
 }
 
-export default async function RunnersPage() {
-  const runners = await api.getRunnerHealth()
+export default function RunnersPage() {
+  const [runners, setRunners] = useState<RunnerHealth[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await api.getRunnerHealth()
+        setRunners(data)
+        setError(null)
+      } catch (err) {
+        console.error('Failed to fetch runner health:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch runner health')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 15000) // refresh every 15 seconds
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Runner Health</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Runner Health</h1>
+        <Badge variant="outline">Auto-refreshing</Badge>
+      </div>
+
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {runners.map((runner) => (

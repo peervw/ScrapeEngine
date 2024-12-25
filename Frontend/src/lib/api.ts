@@ -101,82 +101,60 @@ export interface LogsResponse {
 
 class ApiClient {
   private apiKey: string | null = null;
-  private apiKeyPromise: Promise<string> | null = null;
+  private baseUrl: string;
 
-  private async ensureApiKey(): Promise<string> {
-    if (this.apiKey) {
-      return this.apiKey;
-    }
+  constructor() {
+    this.baseUrl = '/api';
+  }
 
-    if (this.apiKeyPromise) {
-      return this.apiKeyPromise;
-    }
-
-    this.apiKeyPromise = (async () => {
+  private async fetch<T>(path: string, options: RequestInit = {}, requiresAuth: boolean = true): Promise<T> {
+    if (requiresAuth && !this.apiKey && path !== '/settings/api-key') {
       try {
-        const response = await this.fetch<{ key: string }>('/api/settings/api-key', {}, false);
+        const response = await this.getApiKey();
         this.apiKey = response.key;
-        return this.apiKey;
-      } finally {
-        this.apiKeyPromise = null;
+        console.log("Retrieved API key:", this.apiKey?.substring(0, 10) + "...");
+      } catch (error) {
+        console.error("Failed to get API key:", error);
+        throw error;
       }
-    })();
+    }
 
-    return this.apiKeyPromise;
-  }
-
-  private async getHeaders(requiresAuth: boolean = true): Promise<HeadersInit> {
     const headers: HeadersInit = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     };
-    
-    if (requiresAuth) {
-      const apiKey = await this.ensureApiKey();
-      headers['Authorization'] = `Bearer ${apiKey}`;
+
+    if (requiresAuth && this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+      console.log("Using Authorization header:", headers['Authorization'].substring(0, 20) + "...");
     }
+
+    const cleanPath = path.startsWith('/api/') ? path.substring(4) : path;
+    const url = new URL(`${this.baseUrl}${cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath}`, window.location.origin).toString();
     
-    return headers;
-  }
+    console.log(`Making request to: ${url}`);
 
-  private getBaseUrl(): string {
-    if (typeof window !== 'undefined') {
-      return '';
-    }
-    return process.env.INTERNAL_API_URL || 'http://distributor:8080';
-  }
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...headers,
+        ...options.headers,
+      },
+    });
 
-  private async fetch<T>(endpoint: string, options: RequestInit = {}, requiresAuth: boolean = true): Promise<T> {
-    const baseUrl = this.getBaseUrl();
-    const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;
-    const headers = await this.getHeaders(requiresAuth);
-
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          ...headers,
-          ...options.headers,
-        },
+    if (!response.ok) {
+      console.error(`API Error (${url}):`, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
       });
-      
-      if (!response.ok) {
-        if (response.status === 401 && requiresAuth && this.apiKey) {
-          this.apiKey = null;
-          return this.fetch<T>(endpoint, options, requiresAuth);
-        }
-
-        const error = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(error.detail || `API error: ${response.statusText}`);
-      }
-      return response.json();
-    } catch (error) {
-      console.error(`API request failed: ${endpoint}`, error);
-      throw error;
+      throw new Error(`API request failed: ${response.statusText}`);
     }
+
+    return response.json();
   }
 
   async getRunnerHealth(): Promise<RunnerHealth[]> {
-    return this.fetch<RunnerHealth[]>('/api/runners/health');
+    return this.fetch<RunnerHealth[]>('/runners/health');
   }
 
   async getScrapeLogs(limit: number = 50, offset: number = 0): Promise<LogsResponse> {
@@ -184,41 +162,41 @@ class ApiClient {
       limit: limit.toString(),
       offset: offset.toString()
     });
-    return this.fetch<LogsResponse>(`/api/logs?${params}`);
+    return this.fetch<LogsResponse>(`/logs?${params}`);
   }
 
   async getSystemMetrics(): Promise<SystemMetrics> {
-    return this.fetch<SystemMetrics>('/api/metrics');
+    return this.fetch<SystemMetrics>('/metrics');
   }
 
   async getSystemEvents(): Promise<{ title: string; description: string }[]> {
-    return this.fetch<{ title: string; description: string }[]>('/api/events');
+    return this.fetch<{ title: string; description: string }[]>('/events');
   }
 
   async submitScrapeRequest(config: ScrapeRequest): Promise<ScrapingResult> {
-    return this.fetch<ScrapingResult>('/api/scrape', {
+    return this.fetch<ScrapingResult>('/scrape', {
       method: 'POST',
       body: JSON.stringify(config),
     });
   }
 
   async getSettings(): Promise<SystemSettings> {
-    return this.fetch<SystemSettings>('/api/settings', {}, false);
+    return this.fetch<SystemSettings>('/settings', {}, false);
   }
 
   async updateSettings(settings: Partial<SystemSettings>): Promise<{ status: string }> {
-    return this.fetch<{ status: string }>('/api/settings', {
+    return this.fetch<{ status: string }>('/settings', {
       method: 'POST',
       body: JSON.stringify(settings),
     }, false);
   }
 
   async getApiKey(): Promise<{ key: string }> {
-    return this.fetch<{ key: string }>('/api/settings/api-key', {}, false);
+    return this.fetch<{ key: string }>('/settings/api-key', {}, false);
   }
 
   async regenerateApiKey(): Promise<{ key: string }> {
-    const response = await this.fetch<{ key: string }>('/api/settings/api-key/regenerate', {
+    const response = await this.fetch<{ key: string }>('/settings/api-key/regenerate', {
       method: 'POST'
     }, false);
     this.apiKey = response.key;

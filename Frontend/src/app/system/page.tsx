@@ -1,17 +1,49 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { api } from "@/lib/api"
+import { Loader2 } from "lucide-react"
+import type { SystemMetrics } from "@/lib/api"
 
-// Force dynamic rendering
-export const dynamic = 'force-dynamic'
-export const revalidate = 15 // revalidate every 15 seconds
+export default function SystemPage() {
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null)
+  const [events, setEvents] = useState<{ title: string; description: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-export default async function SystemPage() {
-  const [metrics, events] = await Promise.all([
-    api.getSystemMetrics(),
-    api.getSystemEvents(),
-  ])
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [metricsData, eventsData] = await Promise.all([
+          api.getSystemMetrics(),
+          api.getSystemEvents(),
+        ])
+        setMetrics(metricsData)
+        setEvents(eventsData)
+        setError(null)
+      } catch (err) {
+        console.error('Failed to fetch system data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch system data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 15000) // refresh every 15 seconds
+    return () => clearInterval(interval)
+  }, [])
+
+  if (loading || !metrics) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   const isHealthy = metrics.cpu_usage < 80 && 
     (metrics.memory_usage.used / metrics.memory_usage.total) < 0.8 &&
@@ -21,13 +53,22 @@ export default async function SystemPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">System Status</h1>
-        <Badge 
-          variant="outline" 
-          className={isHealthy ? 'bg-green-500' : 'bg-yellow-500'}
-        >
-          {isHealthy ? 'All Systems Operational' : 'Performance Degraded'}
-        </Badge>
+        <div className="flex gap-2">
+          <Badge variant="outline">Auto-refreshing</Badge>
+          <Badge 
+            variant="outline" 
+            className={isHealthy ? 'bg-green-500' : 'bg-yellow-500'}
+          >
+            {isHealthy ? 'All Systems Operational' : 'Performance Degraded'}
+          </Badge>
+        </div>
       </div>
+
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -47,7 +88,7 @@ export default async function SystemPage() {
                 ></div>
               </div>
             </div>
-            
+
             <div>
               <div className="flex justify-between mb-1 text-sm">
                 <span>Memory Usage</span>
