@@ -46,7 +46,6 @@ services:
     build: ./Frontend
     ports:
       - 3000
-      - 80
     environment:
       - INTERNAL_API_URL=http://distributor:8080
     depends_on:
