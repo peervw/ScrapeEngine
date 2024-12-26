@@ -142,22 +142,25 @@ async def health_check_loop():
     """Periodically check health and re-register if needed"""
     while True:
         try:
-            # Check distributor health
+            # Check distributor health using authenticated endpoint
             async with aiohttp.ClientSession() as session:
                 try:
                     async with session.get(
-                        f"{DISTRIBUTOR_URL}/health/public",
+                        f"{DISTRIBUTOR_URL}/health",
+                        headers={"Authorization": f"Bearer {app.state.api_key}"},
                         timeout=5
                     ) as response:
                         if response.status != 200:
                             logger.warning("Distributor health check failed, attempting to re-register")
                             await register_with_distributor()
+                        
                         response_data = await response.json()
-                        if RUNNER_ID in response_data["runner_ids"]:
-                            logger.info("Runner is still registered")
-                        else:
-                            logger.warning("Runner is not registered")
+                        if RUNNER_ID not in response_data["runner_ids"]:
+                            logger.warning("Runner is not registered, attempting to re-register")
                             await register_with_distributor()
+                        else:
+                            logger.debug("Runner is still registered")
+                            
                 except Exception as e:
                     logger.error(f"Health check failed: {str(e)}")
                     await register_with_distributor()
