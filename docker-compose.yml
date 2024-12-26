@@ -6,8 +6,6 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - WEBSHARE_TOKEN=${WEBSHARE_TOKEN}
-      - DEBUG=${DEBUG:-false}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=scrapeengine
@@ -48,7 +46,7 @@ services:
   frontend:
     build: ./Frontend
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - INTERNAL_API_URL=http://distributor:8080
     depends_on:
