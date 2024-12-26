@@ -99,12 +99,11 @@ export default function LogsPage() {
         <div className="flex items-center gap-4">
           <Badge variant="outline">Live Updates</Badge>
           <Button 
-            variant="destructive" 
-            size="sm"
+            variant="outline" 
             onClick={() => setIsDeleteAllConfirmOpen(true)}
+            className="text-destructive hover:text-destructive/90"
           >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete All Logs
+            Delete All
           </Button>
         </div>
       </div>

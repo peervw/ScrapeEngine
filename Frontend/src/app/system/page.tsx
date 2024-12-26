@@ -56,7 +56,6 @@ export default function SystemPage() {
         <div className="flex gap-2">
           <Badge variant="outline">Auto-refreshing</Badge>
           <Badge 
-            variant="outline" 
             className={isHealthy ? 'bg-green-500' : 'bg-yellow-500'}
           >
             {isHealthy ? 'All Systems Operational' : 'Performance Degraded'}

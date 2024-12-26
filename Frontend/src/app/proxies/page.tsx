@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -31,13 +31,21 @@ import { Loader2, RefreshCcw, Trash2, Eye, EyeOff } from "lucide-react";
 import { api } from '@/lib/api';
 import type { ProxyStats, ProxyCreate } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
+import { useToast } from "@/components/ui/use-toast";
+import { Copy, Check } from "lucide-react";
+
+interface CopiedStates {
+  [key: string]: boolean;
+}
 
 const ProxiesPage: React.FC = () => {
   const [proxies, setProxies] = useState<ProxyStats[]>([]);
   const [totalProxies, setTotalProxies] = useState(0);
   const [availableProxies, setAvailableProxies] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedStates, setCopiedStates] = useState<CopiedStates>({});
+  const { toast } = useToast();
 
   // Dialog states
   const [addProxyOpen, setAddProxyOpen] = useState(false);
@@ -52,10 +60,23 @@ const ProxiesPage: React.FC = () => {
   const [webshareToken, setWebshareToken] = useState('');
   const [currentWebshareToken, setCurrentWebshareToken] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [isDeleteAllConfirmOpen, setIsDeleteAllConfirmOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadProxies = async () => {
+  const handleCopy = async (text: string, key: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedStates((prev: CopiedStates) => ({ ...prev, [key]: true }));
+    setTimeout(() => setCopiedStates((prev: CopiedStates) => ({ ...prev, [key]: false })), 2000);
+    toast({
+      title: "Copied",
+      description: "Text copied to clipboard",
+      duration: 2000,
+    });
+  };
+
+  const loadProxies = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setIsRefreshing(true);
       const response = await api.getProxies();
       setProxies(response.proxies);
       setTotalProxies(response.total_proxies);
@@ -64,14 +85,22 @@ const ProxiesPage: React.FC = () => {
     } catch (err) {
       setError('Failed to load proxies');
       console.error('Error loading proxies:', err);
+      toast({
+        title: "Error",
+        description: "Failed to load proxies",
+        variant: "destructive",
+        duration: 3000,
+      });
     } finally {
-      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadProxies();
-  }, []);
+    const interval = setInterval(loadProxies, 30000);
+    return () => clearInterval(interval);
+  }, [loadProxies]);
 
   const handleAddProxy = async () => {
     try {
@@ -79,9 +108,20 @@ const ProxiesPage: React.FC = () => {
       setAddProxyOpen(false);
       setNewProxy({ host: '', port: '', username: '', password: '' });
       loadProxies();
+      toast({
+        title: "Success",
+        description: "Proxy added successfully",
+        duration: 3000,
+      });
     } catch (err) {
       setError('Failed to add proxy');
       console.error('Error adding proxy:', err);
+      toast({
+        title: "Error",
+        description: "Failed to add proxy",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -121,9 +161,19 @@ const ProxiesPage: React.FC = () => {
     try {
       await api.deleteProxy(host);
       loadProxies();
+      toast({
+        title: "Success",
+        description: "Proxy deleted successfully",
+        duration: 3000,
+      });
     } catch (err) {
-      setError('Failed to delete proxy');
       console.error('Error deleting proxy:', err);
+      toast({
+        title: "Error",
+        description: "Failed to delete proxy",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -132,24 +182,40 @@ const ProxiesPage: React.FC = () => {
       await api.setWebshareToken(webshareToken);
       setWebshareOpen(false);
       setWebshareToken('');
-      await loadWebshareToken();
-      await loadProxies();
-      setError(null);
+      loadWebshareToken();
+      toast({
+        title: "Success",
+        description: "Webshare token set successfully",
+        duration: 3000,
+      });
     } catch (err) {
-      setError('Failed to set Webshare token');
-      console.error('Error setting Webshare token:', err);
+      console.error('Error setting webshare token:', err);
+      toast({
+        title: "Error",
+        description: "Failed to set webshare token",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
   const handleClearWebshareToken = async () => {
     try {
       await api.setWebshareToken('');
-      await loadWebshareToken();
-      await loadProxies();
-      setError(null);
+      setCurrentWebshareToken(null);
+      toast({
+        title: "Success",
+        description: "Webshare token cleared successfully",
+        duration: 3000,
+      });
     } catch (err) {
-      setError('Failed to clear Webshare token');
-      console.error('Error clearing Webshare token:', err);
+      console.error('Error clearing webshare token:', err);
+      toast({
+        title: "Error",
+        description: "Failed to clear webshare token",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -173,33 +239,72 @@ const ProxiesPage: React.FC = () => {
     try {
       await api.refreshProxies();
       loadProxies();
+      toast({
+        title: "Success",
+        description: "Proxies refreshed successfully",
+        duration: 3000,
+      });
     } catch (err) {
-      setError('Failed to refresh proxies');
       console.error('Error refreshing proxies:', err);
+      toast({
+        title: "Error",
+        description: "Failed to refresh proxies",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
+  };
+
+  const handleDeleteAllProxies = async () => {
+    try {
+      // Delete all proxies one by one
+      for (const proxy of proxies) {
+        await api.deleteProxy(proxy.host);
+      }
+      setIsDeleteAllConfirmOpen(false);
+      loadProxies();
+      toast({
+        title: "Success",
+        description: "All proxies deleted successfully",
+        duration: 3000,
+      });
+    } catch (err) {
+      console.error('Error deleting all proxies:', err);
+      toast({
+        title: "Error",
+        description: "Failed to delete all proxies",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Proxy Management</h1>
-        <div className="flex gap-2">
+        <h1 className="text-3xl font-bold">Proxies</h1>
+        <div className="flex items-center gap-4">
           <Button onClick={() => setAddProxyOpen(true)}>
             Add Proxy
           </Button>
-          <Button onClick={() => setWebshareOpen(true)}>
+          <Button variant="outline" onClick={() => setWebshareOpen(true)}>
             Set Webshare Token
           </Button>
           <Button 
+            variant="outline" 
+            onClick={() => setIsDeleteAllConfirmOpen(true)}
+            className="text-destructive hover:text-destructive/90"
+          >
+            Delete All
+          </Button>
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button
+            variant="outline"
+            size="icon"
             onClick={handleRefreshProxies}
             disabled={isLoading}
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-4 w-4 mr-2" />
-            )}
-            Refresh
+            <RefreshCcw className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -246,8 +351,24 @@ const ProxiesPage: React.FC = () => {
                   </TableRow>
                 ) : (
                   proxies.map((proxy) => (
-                    <TableRow key={proxy.host}>
-                      <TableCell>{proxy.host}</TableCell>
+                    <TableRow key={proxy.host} className={isRefreshing ? "opacity-50 transition-opacity" : ""}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {proxy.host}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopy(`${proxy.host}:${proxy.port}`, `proxy-${proxy.host}`)}
+                            className="h-4 w-4 p-0"
+                          >
+                            {copiedStates[`proxy-${proxy.host}`] ? (
+                              <Check className="h-3 w-3" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell>{proxy.port}</TableCell>
                       <TableCell>
                         {proxy.last_used
@@ -264,15 +385,17 @@ const ProxiesPage: React.FC = () => {
                       </TableCell>
                       <TableCell>{proxy.failures}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteProxy(proxy.host)}
-                          disabled={isLoading}
-                          className="text-destructive hover:text-destructive/90"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteProxy(proxy.host)}
+                            disabled={isLoading}
+                            className="text-destructive hover:text-destructive/90 h-8 w-8"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -412,6 +535,26 @@ const ProxiesPage: React.FC = () => {
               Cancel
             </Button>
             <Button onClick={handleSetWebshareToken}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete All Confirmation Dialog */}
+      <Dialog open={isDeleteAllConfirmOpen} onOpenChange={setIsDeleteAllConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete All Proxies</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            Are you sure you want to delete all proxies? This action cannot be undone.
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteAllConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteAllProxies}>
+              Delete All
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
