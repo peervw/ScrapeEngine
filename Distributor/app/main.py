@@ -384,7 +384,8 @@ async def health_check(authorization: str = Depends(token_required)):
         "status": "healthy",
         "version": "1.0.0",
         "active_runners": len(app.state.runner_manager.runners),
-        "available_proxies": len(app.state.proxy_manager.available_proxies)
+        "available_proxies": len(app.state.proxy_manager.available_proxies),
+        "runner_ids": list(app.state.runner_manager.runners.keys())
     }
 
 @app.get("/health/public")

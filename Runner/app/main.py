@@ -152,6 +152,12 @@ async def health_check_loop():
                         if response.status != 200:
                             logger.warning("Distributor health check failed, attempting to re-register")
                             await register_with_distributor()
+                        # check if in the response under runner_ids
+                        if RUNNER_ID in response.json()["runner_ids"]:
+                            logger.info("Runner is still registered")
+                        else:
+                            logger.warning("Runner is not registered")
+                            await register_with_distributor()
                 except Exception as e:
                     logger.error(f"Health check failed: {str(e)}")
                     await register_with_distributor()
