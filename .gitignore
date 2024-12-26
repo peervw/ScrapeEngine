@@ -12,8 +12,3 @@ __pycache__/
 *.swp
 *.swo
 .DS_Store
-
-# Project specific
-app/static/*.txt
-logs/
-*.log

@@ -28,7 +28,6 @@ services:
     build: ./Runner
     environment:
       - DISTRIBUTOR_URL=http://distributor:8080
-      - DEBUG=${DEBUG:-false}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=scrapeengine
