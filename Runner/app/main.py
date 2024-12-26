@@ -86,22 +86,22 @@ async def register_with_distributor():
         ttl_dns_cache=300
     )
     
-    while retry_count < max_retries:
-        try:
-            # Get container ID for unique identification
-            container_id = os.getenv('HOSTNAME', socket.gethostname())
-            runner_url = f"http://{container_id}:8000"
-            runner_id = f"runner-{container_id}"
-            
-            logger.debug(f"Attempting to register with distributor at: {DISTRIBUTOR_URL}")
-            logger.debug(f"Using runner URL: {runner_url}")
-            logger.debug(f"Using runner_id: {runner_id}")
-            
-            # Get API key from database
-            api_key = get_api_key()
-            logger.debug("Got API key from database")
-            
-            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        while retry_count < max_retries:
+            try:
+                # Get container ID for unique identification
+                container_id = os.getenv('HOSTNAME', socket.gethostname())
+                runner_url = f"http://{container_id}:8000"
+                runner_id = f"runner-{container_id}"
+                
+                logger.debug(f"Attempting to register with distributor at: {DISTRIBUTOR_URL}")
+                logger.debug(f"Using runner URL: {runner_url}")
+                logger.debug(f"Using runner_id: {runner_id}")
+                
+                # Get API key from database
+                api_key = get_api_key()
+                logger.debug("Got API key from database")
+                
                 # Register with the API key
                 logger.debug("Attempting registration...")
                 async with session.post(
@@ -124,17 +124,17 @@ async def register_with_distributor():
                     
                     logger.warning(f"Registration failed: {response.status} - {response_text}")
                     raise Exception(f"Registration failed with status {response.status}: {response_text}")
-                
-        except Exception as e:
-            logger.error(f"Failed to register runner: {str(e)}")
-            if isinstance(e, aiohttp.ClientError):
-                logger.error(f"Connection error details: {str(e)}")
-        
-        retry_count += 1
-        if retry_count < max_retries:
-            delay = min(30, 2 ** retry_count)  # Exponential backoff with max 30 seconds
-            logger.debug(f"Retry {retry_count}/{max_retries} in {delay} seconds")
-            await asyncio.sleep(delay)
+            
+            except Exception as e:
+                logger.error(f"Failed to register runner: {str(e)}")
+                if isinstance(e, aiohttp.ClientError):
+                    logger.error(f"Connection error details: {str(e)}")
+            
+            retry_count += 1
+            if retry_count < max_retries:
+                delay = min(30, 2 ** retry_count)  # Exponential backoff with max 30 seconds
+                logger.debug(f"Retry {retry_count}/{max_retries} in {delay} seconds")
+                await asyncio.sleep(delay)
 
     logger.error("Failed to register after maximum retries")
 
@@ -145,13 +145,13 @@ async def health_check_loop():
             # Check distributor health
             async with aiohttp.ClientSession() as session:
                 try:
-                    response = await session.get(
+                    async with session.get(
                         f"{DISTRIBUTOR_URL}/health/public",
                         timeout=5
-                    )
-                    if response.status != 200:
-                        logger.warning("Distributor health check failed, attempting to re-register")
-                        await register_with_distributor()
+                    ) as response:
+                        if response.status != 200:
+                            logger.warning("Distributor health check failed, attempting to re-register")
+                            await register_with_distributor()
                 except Exception as e:
                     logger.error(f"Health check failed: {str(e)}")
                     await register_with_distributor()
