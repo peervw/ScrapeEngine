@@ -31,6 +31,10 @@ class ProxyCreate(BaseModel):
 class WebshareToken(BaseModel):
     token: str
 
+# Add constants at top of file
+HEALTH_CHECK_INTERVAL = 30  # seconds
+MAX_FAILED_CHECKS = 3  # number of failed checks before deregistration
+
 def get_db_connection():
     """Get a PostgreSQL database connection with retries"""
     max_retries = 5
@@ -147,12 +151,20 @@ async def lifespan(app: FastAPI):
     runner_manager = RunnerManager()
     app.state.runner_manager = runner_manager
     
+    # Start health check task
+    health_check_task = asyncio.create_task(runner_manager.start_health_checks())
+    
     yield
     
     # Cleanup
     proxy_maintenance_task.cancel()
     try:
         await proxy_maintenance_task
+    except asyncio.CancelledError:
+        pass
+    health_check_task.cancel()
+    try:
+        await health_check_task
     except asyncio.CancelledError:
         pass
 

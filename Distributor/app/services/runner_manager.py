@@ -5,6 +5,7 @@ import json
 from fastapi import HTTPException
 from datetime import datetime
 import random
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -93,3 +94,33 @@ class RunnerManager:
         # If we get here, all runners failed
         error_msg = str(last_error) if last_error else "All runners failed"
         raise HTTPException(status_code=503, detail=error_msg)
+
+    async def start_health_checks(self):
+        """Periodically check health of all registered runners"""
+        while True:
+            for runner_id, info in list(self.runners.items()):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(f"{info['url']}/health", timeout=5) as response:
+                            if response.status != 200:
+                                await self._handle_failed_health_check(runner_id, info)
+                            else:
+                                info["status"] = "active"
+                                info["last_seen"] = datetime.now()
+                                info["failed_checks"] = 0  # Reset failed checks counter
+                except Exception as e:
+                    logger.error(f"Health check failed for runner {runner_id}: {e}")
+                    await self._handle_failed_health_check(runner_id, info)
+            
+            await asyncio.sleep(30)  # Check every 30 seconds
+
+    async def _handle_failed_health_check(self, runner_id: str, info: dict):
+        """Handle a failed health check for a runner"""
+        info["status"] = "offline"
+        info["failed_checks"] = info.get("failed_checks", 0) + 1
+        
+        if info["failed_checks"] >= 3:  # MAX_FAILED_CHECKS
+            logger.warning(f"Runner {runner_id} failed 3 health checks, deregistering")
+            del self.runners[runner_id]
+        else:
+            logger.warning(f"Runner {runner_id} failed health check ({info['failed_checks']}/3)")
