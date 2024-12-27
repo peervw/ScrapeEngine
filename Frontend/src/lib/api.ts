@@ -123,6 +123,21 @@ export interface ProxyCreate {
   password?: string;
 }
 
+export interface SystemEvent {
+  id: number;
+  timestamp: string;
+  title: string;
+  description: string;
+  event_type: string;
+  severity: 'info' | 'warning' | 'error';
+  details?: Record<string, unknown>;
+}
+
+export interface EventsResponse {
+  total: number;
+  events: SystemEvent[];
+}
+
 class ApiClient {
   private apiKey: string | null = null;
   private baseUrl: string;
@@ -193,8 +208,15 @@ class ApiClient {
     return this.fetch<SystemMetrics>('/metrics');
   }
 
-  async getSystemEvents(): Promise<{ title: string; description: string }[]> {
-    return this.fetch<{ title: string; description: string }[]>('/events');
+  async getSystemEvents(limit: number = 50, offset: number = 0, event_type?: string): Promise<EventsResponse> {
+    const params = new URLSearchParams({ 
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+    if (event_type) {
+      params.append('event_type', event_type);
+    }
+    return this.fetch<EventsResponse>(`/events?${params}`);
   }
 
   async submitScrapeRequest(config: ScrapeRequest): Promise<ScrapingResult> {

@@ -5,6 +5,7 @@ from datetime import datetime
 import asyncio
 from fastapi import HTTPException
 import random
+from ..db.crud.events import store_event
 
 logger = logging.getLogger(__name__)
 
@@ -184,9 +185,40 @@ class ProxyManager:
             self.proxies.clear()
             self.available_proxies.clear()
 
-    async def add_manual_proxy(self, host: str, port: str, username: str = None, password: str = None):
+    async def add_manual_proxy(self, host: str, port: str, username: Optional[str] = None, password: Optional[str] = None):
         """Add a proxy manually"""
-        await self.add_proxy((host, port, username, password))
+        proxy_str = f"{host}:{port}"
+        if proxy_str in self.proxies:
+            logger.warning(f"Proxy {proxy_str} already exists")
+            return
+
+        self.proxies[host] = {
+            "port": port,
+            "username": username,
+            "password": password,
+            "last_used": None,
+            "success_rate": 0.0,
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failures": 0,
+            "avg_response_time": None,
+            "total_response_time": 0.0
+        }
+        self.available_proxies.append((host, port))
+        logger.info(f"Added proxy {proxy_str}")
+
+        # Log event
+        store_event({
+            "title": "New proxy added",
+            "description": f"Manual proxy added: {host}:{port}",
+            "event_type": "proxy",
+            "severity": "info",
+            "details": {
+                "host": host,
+                "port": port,
+                "has_auth": bool(username and password)
+            }
+        })
 
     async def delete_proxy(self, host: str):
         """Delete a proxy by host"""

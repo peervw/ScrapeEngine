@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 import aiohttp
 import logging
 import json
@@ -6,12 +6,15 @@ from fastapi import HTTPException
 from datetime import datetime
 import random
 import asyncio
+from ..db.crud.events import store_event
 
 logger = logging.getLogger(__name__)
 
 class RunnerManager:
     def __init__(self):
         self.runners: Dict[str, dict] = {}  # runner_id -> runner_info
+        self.health_check_interval = 30  # seconds
+        self.health_check_task = None
         logger.info("RunnerManager initialized")
         
     async def register_runner(self, runner_id: str, url: str):
@@ -42,6 +45,18 @@ class RunnerManager:
             }
             logger.info(f"Runner {runner_id} registered successfully. Total runners: {len(self.runners)}")
             logger.info(f"Current runners: {list(self.runners.keys())}")
+            
+            # Log event
+            store_event({
+                "title": f"Runner {runner_id} registered",
+                "description": f"New runner registered at {url}",
+                "event_type": "runner",
+                "severity": "info",
+                "details": {
+                    "runner_id": runner_id,
+                    "url": url
+                }
+            })
             
         except Exception as e:
             logger.error(f"Failed to register runner {runner_id}: {str(e)}")
@@ -124,3 +139,41 @@ class RunnerManager:
             del self.runners[runner_id]
         else:
             logger.warning(f"Runner {runner_id} failed health check ({info['failed_checks']}/3)")
+
+    async def deregister_runner(self, runner_id: str):
+        """Remove a runner from the pool"""
+        if runner_id in self.runners:
+            url = self.runners[runner_id]["url"]
+            del self.runners[runner_id]
+            logger.info(f"Deregistered runner {runner_id}")
+            
+            # Log event
+            store_event({
+                "title": f"Runner {runner_id} deregistered",
+                "description": f"Runner at {url} has been deregistered",
+                "event_type": "runner",
+                "severity": "warning",
+                "details": {
+                    "runner_id": runner_id,
+                    "url": url
+                }
+            })
+
+    async def mark_runner_offline(self, runner_id: str, reason: str = "Health check failed"):
+        """Mark a runner as offline"""
+        if runner_id in self.runners:
+            self.runners[runner_id]["status"] = "offline"
+            self.runners[runner_id]["last_status"] = reason
+            logger.warning(f"Runner {runner_id} marked as offline: {reason}")
+            
+            # Log event
+            store_event({
+                "title": f"Runner {runner_id} offline",
+                "description": f"Runner marked as offline: {reason}",
+                "event_type": "runner",
+                "severity": "warning",
+                "details": {
+                    "runner_id": runner_id,
+                    "reason": reason
+                }
+            })

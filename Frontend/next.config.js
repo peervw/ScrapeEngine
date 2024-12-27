@@ -2,7 +2,10 @@
 const nextConfig = {
   output: 'standalone',
   async rewrites() {
-    const internalUrl = process.env.INTERNAL_API_URL || 'http://distributor:8080';
+    const internalUrl = process.env.NODE_ENV === 'development' 
+      ? 'http://localhost:8080'  // Use local URL in development
+      : (process.env.INTERNAL_API_URL || 'http://distributor:8080');
+    
     return {
       beforeFiles: [
         {
