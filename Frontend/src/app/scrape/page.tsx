@@ -173,7 +173,7 @@ result = response.json()`
 
         {result && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Scraping Result</CardTitle>
               <Button
               variant="outline"
