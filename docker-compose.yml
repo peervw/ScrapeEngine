@@ -44,9 +44,10 @@ services:
 
   frontend:
     build: ./Frontend
+    ports:
+      - 3000
     environment:
       - INTERNAL_API_URL=http://distributor:8080
-      - PORT=3000
     depends_on:
       distributor:
         condition: service_healthy
