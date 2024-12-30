@@ -92,4 +92,21 @@ def delete_all_logs():
     c = conn.cursor()
     c.execute('DELETE FROM scrape_logs')
     conn.commit()
-    conn.close() 
+    conn.close()
+
+def delete_old_logs(days: int = 30):
+    """Delete logs older than specified days and return number of deleted records"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''
+        WITH deleted AS (
+            DELETE FROM scrape_logs 
+            WHERE timestamp < NOW() - INTERVAL '%s days'
+            RETURNING id
+        )
+        SELECT COUNT(*) FROM deleted
+    ''', (days,))
+    deleted_count = c.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return deleted_count 

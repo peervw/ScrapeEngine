@@ -12,6 +12,7 @@ from .db.session import init_db, get_db_connection
 from .api.routes import api_router
 from .core.security import token_required
 from .db.crud.events import store_event
+from .services.maintenance import MaintenanceService
 
 # Setup logging first
 setup_logging()
@@ -44,6 +45,10 @@ async def lifespan(app: FastAPI):
     })
     
     logger.info("Application startup complete")
+    
+    # Start maintenance service
+    maintenance_service = MaintenanceService()
+    asyncio.create_task(maintenance_service.start())
     
     yield
     
