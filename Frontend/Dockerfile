@@ -7,8 +7,8 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json ./
-# Remove package-lock.json and install fresh dependencies
-RUN rm -f package-lock.json && npm install --production
+# Install all dependencies including devDependencies for build
+RUN rm -f package-lock.json && npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
