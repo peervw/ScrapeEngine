@@ -6,9 +6,9 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
-COPY package.json ./
+COPY package.json package-lock.json* ./
 # Install all dependencies including devDependencies for build
-RUN rm -f package-lock.json && npm install
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -20,8 +20,9 @@ COPY . .
 # Learn more here: https://nextjs.org/telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Build Next.js based on the preferred package manager
-RUN npm run build
+# Cache the .next directory
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
