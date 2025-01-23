@@ -1,4 +1,4 @@
-import PocketBase from 'pocketbase';
+import PocketBase from 'pocketbase'
 
 export const pb = new PocketBase('https://auth.casealpha.app');
 

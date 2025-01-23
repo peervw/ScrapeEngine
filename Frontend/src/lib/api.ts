@@ -1,5 +1,3 @@
-import { isAuthenticated } from '@/lib/auth';
-
 export interface ScrapingConfig {
   stealth: boolean;
   render: boolean;
