@@ -1,3 +1,5 @@
+import { isAuthenticated } from '@/lib/auth';
+
 export interface ScrapingConfig {
   stealth: boolean;
   render: boolean;
@@ -151,7 +153,6 @@ class ApiClient {
       try {
         const response = await this.getApiKey();
         this.apiKey = response.key;
-        console.log("Retrieved API key:", this.apiKey?.substring(0, 10) + "...");
       } catch (error) {
         console.error("Failed to get API key:", error);
         throw error;
@@ -164,7 +165,6 @@ class ApiClient {
 
     if (requiresAuth && this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
-      console.log("Using Authorization header:", headers['Authorization'].substring(0, 20) + "...");
     }
 
     const cleanPath = path.startsWith('/api/') ? path.substring(4) : path;
