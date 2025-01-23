@@ -48,7 +48,7 @@ export default function LoginPage() {
         setIsLoading(true);
         try {
             await signIn(email, password);
-            router.push('/dashboard'); // Redirect to dashboard after successful login
+            router.push('/'); // Redirect to dashboard after successful login
         } catch {
             setError('Invalid email or password. Please try again.');
         } finally {
@@ -63,7 +63,7 @@ export default function LoginPage() {
         setIsLoading(true);
         try {
             await verifyOTP(otpId, otpCode);
-            router.push('/dashboard'); // Redirect to dashboard after successful login
+            router.push('/'); // Redirect to dashboard after successful login
         } catch {
             setError('Invalid OTP code. Please try again.');
         } finally {
