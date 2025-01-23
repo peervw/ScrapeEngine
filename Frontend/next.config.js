@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
+const path = require('path');
+
 const nextConfig = {
   output: 'standalone',
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname, 'src'),
+    };
+    return config;
+  },
   async rewrites() {
     const internalUrl = process.env.NODE_ENV === 'development' 
       ? 'http://localhost:8080'  // Use local URL in development
