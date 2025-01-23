@@ -8,7 +8,6 @@ export interface ScrapeRequest extends ScrapingConfig {
   url: string;
 }
 
-
 export interface ScrapingResult {
   url: string;
   stealth: boolean;
