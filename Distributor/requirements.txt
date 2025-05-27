@@ -5,3 +5,5 @@ pydantic-settings==2.1.0
 aiohttp
 python-dotenv
 setuptools
+sqlalchemy
+alembic
