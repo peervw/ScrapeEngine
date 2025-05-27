@@ -1,7 +1,7 @@
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union, List
 import aiohttp
 import logging
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from playwright.async_api import async_playwright
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from aiohttp import ClientError, ClientTimeout
@@ -10,6 +10,13 @@ import random
 import json
 from datetime import datetime
 import ssl
+
+# Initialize uvloop for better performance on macOS/Linux
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass  # Fall back to default event loop
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +28,55 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 
-MINIMAL_DELAY = 0.1
+# Performance constants
+MAX_CONCURRENT = 50
+MINIMAL_DELAY = 0.05  # Reduced delay
+
+# Global session cache for connection reuse
+_session_cache = {}
+
+async def cleanup_sessions():
+    """Clean up all cached sessions"""
+    global _session_cache
+    for session in _session_cache.values():
+        if not session.closed:
+            await session.close()
+    _session_cache.clear()
+
+async def get_cached_session(proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> aiohttp.ClientSession:
+    """Reuse sessions for better performance"""
+    proxy_key = f"{proxy[0]}:{proxy[1]}" if proxy else "no_proxy"
+    
+    if proxy_key not in _session_cache or _session_cache[proxy_key].closed:
+        headers = await get_enhanced_stealth_headers() if stealth else {
+            "User-Agent": USER_AGENTS[0],
+            "Accept": "*/*"
+        }
+        
+        connector = aiohttp.TCPConnector(
+            limit=100,  # Increased connection pool
+            limit_per_host=30,  # More connections per host
+            ttl_dns_cache=600,  # Longer DNS cache
+            use_dns_cache=True,
+            keepalive_timeout=30,  # Keep connections alive
+            enable_cleanup_closed=True,  # Enable cleanup
+            ssl=False
+        )
+        
+        timeout = ClientTimeout(
+            total=30,  # Increased timeout for testing
+            connect=5,  # Increased connect timeout
+            sock_read=25  # Increased read timeout
+        )
+        
+        _session_cache[proxy_key] = aiohttp.ClientSession(
+            headers=headers,
+            connector=connector,
+            timeout=timeout,
+            trust_env=True
+        )
+    
+    return _session_cache[proxy_key]
 
 async def get_enhanced_stealth_headers() -> Dict[str, str]:
     """Optimized stealth headers - only essential ones"""
@@ -42,66 +97,91 @@ async def get_enhanced_stealth_headers() -> Dict[str, str]:
     
     return headers
 
+async def parse_html_fast(content: str) -> Dict[str, Any]:
+    """Optimized HTML parsing"""
+    # Use lxml parser (faster than html.parser)
+    try:
+        soup = BeautifulSoup(content, 'lxml')
+    except:
+        # Fallback to html.parser if lxml not available
+        soup = BeautifulSoup(content, 'html.parser')
+    
+    # Parse in parallel using asyncio
+    async def get_title():
+        return soup.title.string if soup.title else None
+    
+    async def get_text():
+        return ' '.join(soup.stripped_strings)
+    
+    async def get_links():
+        links = []
+        try:
+            link_elements = soup.find_all('a', href=True, limit=100)
+            for a in link_elements:
+                if isinstance(a, Tag):
+                    href = str(a.get('href', '')) if a.get('href') else None
+                    text = str(a.get_text(strip=True))[:100] if a else ''
+                    if href and href.strip():
+                        links.append({'href': href, 'text': text})
+        except Exception:
+            pass  # Skip link parsing if it fails
+        return links
+    
+    # Run parsing tasks concurrently
+    title, text_content, links = await asyncio.gather(
+        get_title(),
+        get_text(),
+        get_links(),
+        return_exceptions=False
+    )
+    
+    return {
+        'title': title,
+        'text_content': text_content,
+        'links': links
+    }
+
+async def scrape_batch(tasks: List[Dict[str, Any]], max_concurrent: int = MAX_CONCURRENT) -> List[Union[Dict[str, Any], BaseException]]:
+    """Process multiple scraping tasks concurrently"""
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def scrape_with_semaphore(task_data):
+        async with semaphore:
+            return await scrape(task_data)
+    
+    return await asyncio.gather(*[scrape_with_semaphore(task) for task in tasks], return_exceptions=True)
+
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(2),  # Reduced retries
+    wait=wait_exponential(multiplier=0.5, min=1, max=3),  # Faster retry
     retry=(
         retry_if_exception_type(ClientError) |
-        retry_if_exception_type(asyncio.TimeoutError) |
-        retry_if_exception_type(Exception)
+        retry_if_exception_type(asyncio.TimeoutError)
     ),
     before_sleep=lambda retry_state: logger.warning(
-        f"Retry attempt {retry_state.attempt_number} for URL after error: {retry_state.outcome.exception()}"
+        f"Retry attempt {retry_state.attempt_number} for URL after error: {getattr(retry_state.outcome, 'exception', lambda: 'Unknown error')()}"
     )
 )
 async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
-    """Performance-optimized aiohttp scraping with focus on stealth and proxy rotation"""
+    """Performance-optimized aiohttp scraping with session reuse"""
     try:
-        headers = await get_enhanced_stealth_headers() if stealth else {
-            "User-Agent": USER_AGENTS[0],
-            "Accept": "*/*"
-        }
+        session = await get_cached_session(proxy, stealth)
         
-        # Reduced timeout values
-        timeout = ClientTimeout(
-            total=10,
-            connect=3,
-            sock_read=7
-        )
+        # Remove artificial delay - let natural network latency handle this
         
-        # Connector settings optimized for proxy rotation and stealth
-        connector = aiohttp.TCPConnector(
-            force_close=True,        # Important for proxy rotation
-            enable_cleanup_closed=True,
+        async with session.get(
+            url,
+            proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
+            proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
+            allow_redirects=True,
+            max_redirects=2,
             ssl=False,
-            limit_per_host=5,
-            use_dns_cache=True,
-            ttl_dns_cache=300
-        )
-        
-        # Minimal delay only if stealth is enabled
-        if stealth:
-            await asyncio.sleep(MINIMAL_DELAY)
-        
-        async with aiohttp.ClientSession(
-            headers=headers,
-            connector=connector,
-            timeout=timeout,
-            trust_env=True
-        ) as session:
-            async with session.get(
-                url,
-                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
-                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
-                allow_redirects=True,
-                max_redirects=2,
-                timeout=timeout,
-                verify_ssl=False
-            ) as response:
-                if response.status != 200:
-                    raise ClientError(f"HTTP {response.status}")
-                
-                return await response.text()
+            compress=True  # Enable compression
+        ) as response:
+            if response.status != 200:
+                raise ClientError(f"HTTP {response.status}")
+            
+            return await response.text(encoding='utf-8', errors='ignore')  # Faster text parsing
                     
     except Exception as e:
         logger.error(f"Scraping error for {url}: {str(e)}")
@@ -169,7 +249,13 @@ async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
-    method = task_data.get('method', 'simple')
+    method = task_data.get('method', 'aiohttp')
+    # Map method names from API to internal names
+    if method == 'playwright':
+        method = 'advanced'
+    else:
+        method = 'simple'
+        
     proxy = task_data.get('proxy')
     stealth = task_data.get('stealth', False)
     should_parse = task_data.get('parse', True)
@@ -187,22 +273,17 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
         result = {
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
-            'method_used': method_used,
+            'method': method_used,
         }
             
         # Handle different content return scenarios
-        if task_data.get('full_content') == 'yes':
+        if task_data.get('full_content') == True:
             result['html'] = content
             
         if should_parse:
-            # Only parse if explicitly requested
-            soup = BeautifulSoup(content, 'html.parser')
-            result.update({
-                'title': soup.title.string if soup.title else None,
-                'text_content': ' '.join(soup.stripped_strings),
-                'links': [{'href': a.get('href'), 'text': a.text} 
-                         for a in soup.find_all('a', href=True)]
-            })
+            # Use optimized parsing
+            parsed_data = await parse_html_fast(content)
+            result.update(parsed_data)
         else:
             # Return minimal parsed content
             result['raw_content'] = content
@@ -216,3 +297,14 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
             'error': str(e),
             'scrape_time': (datetime.now() - start_time).total_seconds()
         }
+
+if __name__ == "__main__":
+    # Example usage
+    loop = asyncio.get_event_loop()
+    tasks = [
+        {'url': 'https://example.com', 'method': 'simple', 'parse': True},
+        {'url': 'https://example.org', 'method': 'advanced', 'stealth': True, 'parse': False}
+    ]
+    
+    results = loop.run_until_complete(scrape_batch(tasks))
+    print(json.dumps(results, indent=2))

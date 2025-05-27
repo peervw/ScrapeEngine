@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from .services.scraper import scrape
+from .services.scraper import scrape, cleanup_sessions
 from .models import ScrapeRequest
 from .config.logging_config import setup_logging
 import aiohttp
@@ -33,7 +33,9 @@ async def lifespan(app: FastAPI):
     
     yield  # Server is running
     
-    # Cleanup if needed
+    # Cleanup
+    logger.info("Cleaning up sessions...")
+    await cleanup_sessions()
     if not registration_task.done():
         registration_task.cancel()
 

@@ -60,10 +60,12 @@ async def scrape_endpoint(
     request: ScrapeRequest,
     authorization: str = Depends(token_required)
 ):
+    proxy = None
     try:
         proxy = await app.state.proxy_manager.get_next_proxy()
         task_data = {
             "url": str(request.url),
+            "method": request.method,
             "full_content": request.full_content,
             "stealth": request.stealth,
             "cache": request.cache,
@@ -76,19 +78,19 @@ async def scrape_endpoint(
         
         return {
             "url": request.url,
+            "method": result.get("method", request.method),
             "full_content": request.full_content,
             "stealth": request.stealth,
             "cache": request.cache,
             "parse": request.parse,
             "proxy_used": f"{proxy[0]}:{proxy[1]}",
             "runner_used": result.get("runner_id", "unknown"),
-            "method_used": result.get("method_used", "unknown"),
             "content": result,
         }
             
     except Exception as e:
         logger.error(f"Scrape error: {e}")
-        if 'proxy' in locals():
+        if proxy:
             await app.state.proxy_manager.mark_proxy_result(proxy[0], False)
         raise HTTPException(status_code=500, detail=str(e))
 
