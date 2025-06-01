@@ -28,7 +28,7 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-      - RUNNER_ID=runner-${HOSTNAME:-runner}
+      - RUNNER_ID=runner-${HOSTNAME:-unknown}
       - DISTRIBUTOR_URL=http://distributor:8080
     depends_on:
       distributor:
@@ -38,8 +38,13 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - scrape_network
+    deploy:
+      replicas: ${RUNNER_COUNT:-3}
 
 networks:
   scrape_network:
