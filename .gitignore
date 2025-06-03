@@ -17,5 +17,3 @@ __pycache__/
 app/static/*.txt
 logs/
 *.log
-
-Frontend/
