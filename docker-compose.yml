@@ -4,7 +4,7 @@ services:
       context: ./Distributor
       dockerfile: Dockerfile
     ports:
-      - "4000:8080"
+      - "8080:8080"
     env_file:
       - .env
     environment:
