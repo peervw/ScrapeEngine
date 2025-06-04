@@ -10,6 +10,7 @@ import random
 import json
 from datetime import datetime
 import ssl
+import os
 
 # Initialize uvloop for better performance on macOS/Linux
 try:
@@ -54,19 +55,19 @@ async def get_cached_session(proxy: Optional[Tuple[str, str, str, str]] = None, 
         }
         
         connector = aiohttp.TCPConnector(
-            limit=100,  # Increased connection pool
-            limit_per_host=30,  # More connections per host
+            limit=200,  # Increased connection pool
+            limit_per_host=20,  # More connections per host
             ttl_dns_cache=600,  # Longer DNS cache
             use_dns_cache=True,
-            keepalive_timeout=30,  # Keep connections alive
+            keepalive_timeout=45,  # Keep connections alive
             enable_cleanup_closed=True,  # Enable cleanup
             ssl=False
         )
         
         timeout = ClientTimeout(
-            total=30,  # Increased timeout for testing
-            connect=5,  # Increased connect timeout
-            sock_read=25  # Increased read timeout
+            total=45,  # Increased timeout for testing
+            connect=15,  # Increased connect timeout
+            sock_read=35  # Increased read timeout
         )
         
         _session_cache[proxy_key] = aiohttp.ClientSession(
@@ -141,134 +142,45 @@ async def parse_html_fast(content: str) -> Dict[str, Any]:
         'links': links
     }
 
-async def scrape_batch(tasks: List[Dict[str, Any]], max_concurrent: int = MAX_CONCURRENT) -> List[Union[Dict[str, Any], BaseException]]:
-    """Process multiple scraping tasks concurrently"""
-    semaphore = asyncio.Semaphore(max_concurrent)
+async def get_proxy_from_distributor() -> Optional[Tuple[str, str, str, str]]:
+    """Get a proxy from the distributor service"""
+    distributor_url = os.getenv('DISTRIBUTOR_URL', 'http://distributor:8080')
+    auth_token = os.getenv('AUTH_TOKEN')
     
-    async def scrape_with_semaphore(task_data):
-        async with semaphore:
-            return await scrape(task_data)
-    
-    return await asyncio.gather(*[scrape_with_semaphore(task) for task in tasks], return_exceptions=True)
-
-@retry(
-    stop=stop_after_attempt(2),  # Reduced retries
-    wait=wait_exponential(multiplier=0.5, min=1, max=3),  # Faster retry
-    retry=(
-        retry_if_exception_type(ClientError) |
-        retry_if_exception_type(asyncio.TimeoutError)
-    ),
-    before_sleep=lambda retry_state: logger.warning(
-        f"Retry attempt {retry_state.attempt_number} for URL after error: {getattr(retry_state.outcome, 'exception', lambda: 'Unknown error')()}"
-    )
-)
-async def scrape_with_aiohttp(url: str, proxy: Optional[Tuple[str, str, str, str]] = None, stealth: bool = True) -> str:
-    """Performance-optimized aiohttp scraping with session reuse"""
+    if not auth_token:
+        logger.warning("No AUTH_TOKEN found, proceeding without proxy")
+        return None
+        
     try:
-        session = await get_cached_session(proxy, stealth)
-        
-        # Remove artificial delay - let natural network latency handle this
-        
-        async with session.get(
-            url,
-            proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
-            proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
-            allow_redirects=True,
-            max_redirects=2,
-            ssl=False,
-            compress=True  # Enable compression
-        ) as response:
-            if response.status != 200:
-                raise ClientError(f"HTTP {response.status}")
-            
-            return await response.text(encoding='utf-8', errors='ignore')  # Faster text parsing
-                    
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{distributor_url}/api/proxy/next",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                timeout=5
+            ) as response:
+                if response.status == 200:
+                    proxy_data = await response.json()
+                    # Assuming the response is a tuple/list [host, port, username, password]
+                    return tuple(proxy_data)
+                else:
+                    logger.warning(f"Failed to get proxy from distributor: {response.status}")
+                    return None
     except Exception as e:
-        logger.error(f"Scraping error for {url}: {str(e)}")
-        raise
-
-async def setup_stealth_browser(playwright, proxy: Optional[Tuple[str, str, str, str]] = None):
-    """Performance-optimized Playwright setup"""
-    browser_type = 'chromium'
-    
-    browser_args = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--disable-extensions',
-    ]
-    
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=browser_args,
-        proxy={
-            "server": f"http://{proxy[0]}:{proxy[1]}",
-            "username": proxy[2],
-            "password": proxy[3]
-        } if proxy and len(proxy) == 4 else None
-    )
-    
-    context = await browser.new_context(
-        viewport={'width': 1920, 'height': 1080},
-        user_agent=random.choice(USER_AGENTS),
-        locale='en-US',
-        timezone_id='America/New_York',
-    )
-    
-    await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    """)
-    
-    return browser, context
-
-async def scrape_with_playwright(url: str, proxy: Optional[Tuple[str, str, str, str]] = None) -> str:
-    """Performance-optimized Playwright scraping"""
-    async with async_playwright() as playwright:
-        browser, context = await setup_stealth_browser(playwright, proxy)
-        
-        try:
-            page = await context.new_page()
-            await page.set_default_navigation_timeout(20000)
-            
-            await asyncio.sleep(MINIMAL_DELAY)
-            
-            response = await page.goto(url, wait_until='domcontentloaded')
-            
-            if not response.ok:
-                raise Exception(f"HTTP {response.status}")
-            
-            content = await page.content()
-            return content
-            
-        finally:
-            await context.close()
-            await browser.close()
+        logger.warning(f"Error getting proxy from distributor: {e}")
+        return None
 
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
-    method = task_data.get('method', 'aiohttp')
-    # Map method names from API to internal names
-    if method == 'playwright':
-        method = 'advanced'
-    else:
-        method = 'simple'
         
-    proxy = task_data.get('proxy')
     stealth = task_data.get('stealth', False)
     should_parse = task_data.get('parse', True)
     
     start_time = datetime.now()
     
     try:
-        if method == 'advanced':
-            content = await scrape_with_playwright(url, proxy)
-            method_used = 'playwright'
-        else:
-            content = await scrape_with_aiohttp(url, proxy, stealth)
-            method_used = 'aiohttp'
+        content = await scrape_with_aiohttp(url, stealth)
+        method_used = 'aiohttp'
         
         result = {
             'status': 'success',
@@ -298,13 +210,42 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
             'scrape_time': (datetime.now() - start_time).total_seconds()
         }
 
-if __name__ == "__main__":
-    # Example usage
-    loop = asyncio.get_event_loop()
-    tasks = [
-        {'url': 'https://example.com', 'method': 'simple', 'parse': True},
-        {'url': 'https://example.org', 'method': 'advanced', 'stealth': True, 'parse': False}
-    ]
+async def scrape_with_aiohttp(url: str, stealth: bool = True, max_attempts: int = 3) -> str:
+    """Scrape with automatic proxy rotation on failure"""
+    last_exception = None
     
-    results = loop.run_until_complete(scrape_batch(tasks))
-    print(json.dumps(results, indent=2))
+    for attempt in range(max_attempts):
+        try:
+            # Get a new proxy for each attempt
+            proxy = await get_proxy_from_distributor()
+            logger.info(f"Attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy[0] if proxy else 'No proxy'}")
+            
+            session = await get_cached_session(proxy, stealth)
+            
+            async with session.get(
+                url,
+                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
+                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
+                allow_redirects=True,
+                max_redirects=2,
+                ssl=False,
+                compress=True
+            ) as response:
+                if response.status != 200:
+                    raise ClientError(f"HTTP {response.status}")
+                
+                content = await response.text(encoding='utf-8', errors='ignore')
+                logger.info(f"Successfully scraped {url} on attempt {attempt + 1} with proxy: {proxy[0] if proxy else 'No proxy'}")
+                return content
+                
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Attempt {attempt + 1} failed for {url}: {str(e)}")
+            
+            # Add small delay between retries
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(random.uniform(1, 3))
+    
+    # If all attempts failed, raise the last exception
+    logger.error(f"All {max_attempts} attempts failed for {url}")
+    raise last_exception

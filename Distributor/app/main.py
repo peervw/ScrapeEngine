@@ -62,7 +62,6 @@ async def scrape_endpoint(
 ):
     proxy = None
     try:
-        proxy = await app.state.proxy_manager.get_next_proxy()
         task_data = {
             "url": str(request.url),
             "method": request.method,
@@ -70,11 +69,9 @@ async def scrape_endpoint(
             "stealth": request.stealth,
             "cache": request.cache,
             "parse": request.parse,
-            "proxy": proxy
         }
         
         result = await app.state.runner_manager.distribute_task(task_data)
-        await app.state.proxy_manager.mark_proxy_result(proxy[0], True)
         
         return {
             "url": request.url,
@@ -90,8 +87,6 @@ async def scrape_endpoint(
             
     except Exception as e:
         logger.error(f"Scrape error: {e}")
-        if proxy:
-            await app.state.proxy_manager.mark_proxy_result(proxy[0], False)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post('/api/runners/register')
@@ -212,3 +207,11 @@ async def test_scrape(authorization: str = Depends(token_required)):
             "error": str(e),
             "runners_available": len(app.state.runner_manager.runners)
         }
+
+@app.get("/api/proxy/next")
+async def get_next_proxy():
+    """Get the next available proxy from the proxy manager"""
+    proxy = await app.state.proxy_manager.get_next_proxy()
+    if not proxy:
+        raise HTTPException(status_code=503, detail="No proxies available")
+    return proxy
