@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
-from typing import Optional
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from typing import Optional, List, Dict
 from .services.proxy_manager import ProxyManager
 from .services.runner_manager import RunnerManager
+from .services.runner_discovery import RunnerDiscovery
 from .models import ScrapeRequest
 from .config.logging_config import setup_logging
 import logging
 import os
 import asyncio
+import aiohttp
 from contextlib import asynccontextmanager
 
 # Setup logging first
@@ -20,16 +22,73 @@ async def lifespan(app: FastAPI):
     try:
         app.state.runner_manager = RunnerManager()
         app.state.proxy_manager = ProxyManager()
+        app.state.runner_discovery = RunnerDiscovery()
         
         logger.info("Starting proxy maintenance task")
         asyncio.create_task(app.state.proxy_manager.start_proxy_maintenance())
+        
+        logger.info("Starting runner monitoring task")
+        asyncio.create_task(monitor_runners(app))
+        
         logger.info("Startup complete")
     except Exception as e:
         logger.error(f"Startup failed: {e}", exc_info=True)
         raise
     
     yield  # Server is running
+
+async def monitor_runners(app: FastAPI):
+    """Background task to monitor and ping runners"""
+    await asyncio.sleep(30)  # Wait 30 seconds after startup
     
+    while True:
+        try:
+            await asyncio.sleep(60)  # Check every minute
+            
+            active_runners = len(app.state.runner_manager.runners)
+            logger.debug(f"Runner monitor: {active_runners} active runners")
+            
+            if active_runners == 0:
+                logger.warning("No active runners found, attempting to ping known runners")
+                pinged = await app.state.runner_discovery.ping_known_runners(app.state.runner_manager)
+                logger.info(f"Pinged {pinged} known runners for re-registration")
+                
+                # If still no runners after pinging, try to discover via Docker/network
+                if len(app.state.runner_manager.runners) == 0:
+                    await discover_runners_via_network(app)
+                    
+        except Exception as e:
+            logger.error(f"Error in runner monitoring: {e}")
+
+async def discover_runners_via_network(app: FastAPI):
+    """Try to discover runners via common Docker network patterns"""
+    try:
+        # Common Docker service names for runners
+        potential_runners = [
+            "http://runner:8000",
+            "http://runner-1:8000",
+            "http://runner-2:8000",
+            "http://runner-3:8000",
+            "http://scrape-runner:8000",
+            "http://scrape-runner-1:8000",
+            "http://scrape-runner-2:8000"
+        ]
+        
+        for runner_url in potential_runners:
+            try:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    # Try to ping the health endpoint
+                    async with session.get(f"{runner_url}/health") as response:
+                        if response.status == 200:
+                            logger.info(f"Discovered potential runner at {runner_url}")
+                            # Send ping to trigger re-registration
+                            await app.state.runner_discovery._ping_runner(f"discovered-{runner_url.split('/')[-1]}", runner_url)
+            except Exception:
+                continue  # Ignore failed discovery attempts
+                
+    except Exception as e:
+        logger.error(f"Error in network discovery: {e}")
 
 app = FastAPI(
     title="ScrapeEngine Distributor",
@@ -37,6 +96,16 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+def verify_auth(auth_header: Optional[str]) -> bool:
+    """Verify authentication header"""
+    if not auth_header:
+        return False
+    try:
+        scheme, token = auth_header.split()
+        return scheme.lower() == 'bearer' and token == os.getenv("AUTH_TOKEN")
+    except:
+        return False
 
 def token_required(authorization: Optional[str] = Header(None)):
     if not authorization:
@@ -105,6 +174,10 @@ async def register_runner(
     
     try:
         await app.state.runner_manager.register_runner(runner_id, url)
+        
+        # Add to known runners for future pinging
+        app.state.runner_discovery.add_known_runner(runner_id, url)
+        
         logger.info(f"Successfully registered runner {runner_id} at {url}")
         return {
             "status": "registered",
@@ -214,3 +287,23 @@ async def get_next_proxy():
     if not proxy:
         raise HTTPException(status_code=503, detail="No proxies available")
     return proxy
+
+@app.get("/api/runners/status")
+async def get_runner_status(authorization: str = Depends(token_required)):
+    """Get status of all registered runners"""
+    return app.state.runner_manager.get_runner_status()
+
+@app.post("/api/runners/ping-all")
+async def ping_all_runners(authorization: str = Depends(token_required)):
+    """Manually trigger pinging of all known runners"""
+    try:
+        pinged = await app.state.runner_discovery.ping_known_runners(app.state.runner_manager)
+        return {
+            "status": "success",
+            "runners_pinged": pinged,
+            "known_runners": len(app.state.runner_discovery.known_runners),
+            "active_runners": len(app.state.runner_manager.runners)
+        }
+    except Exception as e:
+        logger.error(f"Error pinging runners: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

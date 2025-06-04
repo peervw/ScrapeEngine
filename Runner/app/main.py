@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
     # Start registration process in background
     registration_task = asyncio.create_task(register_with_distributor())
     
+    # Start periodic re-registration check
+    heartbeat_task = asyncio.create_task(periodic_registration_check())
+    
     yield  # Server is running
     
     # Cleanup
@@ -38,27 +41,66 @@ async def lifespan(app: FastAPI):
     await cleanup_sessions()
     if not registration_task.done():
         registration_task.cancel()
+    if not heartbeat_task.done():
+        heartbeat_task.cancel()
 
-# Create the FastAPI app AFTER defining lifespan
-app = FastAPI(
-    title=f"ScrapeEngine Runner {os.getenv('RUNNER_ID', 'unknown')}",
-    lifespan=lifespan
-)
+async def periodic_registration_check():
+    """Periodically check if runner is still registered and re-register if needed"""
+    await asyncio.sleep(60)  # Wait 1 minute after startup
+    
+    while True:
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            
+            if not await is_registered():
+                logger.warning("Runner not registered with distributor, attempting re-registration")
+                await register_with_distributor()
+            else:
+                logger.debug("Runner still registered with distributor")
+                
+        except Exception as e:
+            logger.error(f"Error in periodic registration check: {e}")
+            # Try to re-register on any error
+            try:
+                await register_with_distributor()
+            except Exception as re_reg_error:
+                logger.error(f"Re-registration failed: {re_reg_error}")
+
+async def is_registered() -> bool:
+    """Check if this runner is still registered with the distributor"""
+    try:
+        container_id = os.getenv('HOSTNAME', socket.gethostname())
+        runner_id = f"runner-{container_id}"
+        
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                f"{DISTRIBUTOR_URL}/api/runners/status",
+                headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+            ) as response:
+                if response.status == 200:
+                    runners = await response.json()
+                    return runner_id in runners
+                else:
+                    logger.warning(f"Failed to check registration status: {response.status}")
+                    return False
+                    
+    except Exception as e:
+        logger.error(f"Error checking registration status: {e}")
+        return False
 
 async def register_with_distributor():
-    max_retries = 30
+    """Modified to be callable multiple times"""
+    max_retries = 5  # Reduced for re-registration attempts
     retry_count = 0
     
     if not AUTH_TOKEN:
         logger.error("AUTH_TOKEN environment variable is not set")
-        return
+        return False
         
     if not DISTRIBUTOR_URL:
         logger.error("DISTRIBUTOR_URL environment variable is not set")
-        return
-    
-    # Add random delay to prevent registration conflicts
-    await asyncio.sleep(random.uniform(1, 5))
+        return False
     
     while retry_count < max_retries:
         try:
@@ -68,8 +110,6 @@ async def register_with_distributor():
             runner_id = f"runner-{container_id}"
             
             logger.debug(f"Attempting to register with distributor at: {DISTRIBUTOR_URL}")
-            logger.debug(f"Using runner URL: {runner_url}")
-            logger.debug(f"Using runner_id: {runner_id}")
             
             # Configure timeout and connection settings
             timeout = aiohttp.ClientTimeout(total=30)
@@ -96,21 +136,19 @@ async def register_with_distributor():
                 
                 if response.status == 200:
                     logger.info(f"Runner {runner_id} registered successfully")
-                    return
+                    return True
                     
                 logger.warning(f"Registration failed: {response.status} - {response_text}")
                 
         except Exception as e:
             logger.error(f"Failed to register runner: {str(e)}")
-            if isinstance(e, aiohttp.ClientError):
-                logger.error(f"Connection error details: {str(e)}")
         
         retry_count += 1
         if retry_count < max_retries:
-            await asyncio.sleep(random.uniform(5, 15))
-            logger.debug(f"Retry {retry_count}/{max_retries}")
+            await asyncio.sleep(random.uniform(2, 5))  # Shorter delays for re-registration
 
-    logger.error("Failed to register after maximum retries")
+    logger.error(f"Failed to register after {max_retries} retries")
+    return False
 
 @app.get("/health")
 async def health_check():
@@ -123,4 +161,29 @@ async def scrape_endpoint(request: ScrapeRequest):
         result["runner_id"] = RUNNER_ID
         return result
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ping")
+async def handle_ping(request: dict):
+    """Handle ping from distributor to trigger re-registration"""
+    try:
+        action = request.get("action")
+        distributor_url = request.get("distributor_url")
+        
+        if action == "re_register":
+            logger.info("Received re-registration ping from distributor")
+            
+            # Trigger re-registration in background
+            asyncio.create_task(register_with_distributor())
+            
+            return {
+                "status": "success",
+                "action": "re_registration_triggered",
+                "runner_id": f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
+            }
+        else:
+            return {"status": "unknown_action", "action": action}
+            
+    except Exception as e:
+        logger.error(f"Error handling ping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
