@@ -23,27 +23,6 @@ logger.info(f"RUNNER_ID: {RUNNER_ID}")
 logger.info(f"DISTRIBUTOR_URL: {DISTRIBUTOR_URL}")
 logger.info(f"AUTH_TOKEN present: {bool(AUTH_TOKEN)}")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    logger.debug(f"Starting up runner {RUNNER_ID}")
-    
-    # Start registration process in background
-    registration_task = asyncio.create_task(register_with_distributor())
-    
-    # Start periodic re-registration check
-    heartbeat_task = asyncio.create_task(periodic_registration_check())
-    
-    yield  # Server is running
-    
-    # Cleanup
-    logger.info("Cleaning up sessions...")
-    await cleanup_sessions()
-    if not registration_task.done():
-        registration_task.cancel()
-    if not heartbeat_task.done():
-        heartbeat_task.cancel()
-
 async def periodic_registration_check():
     """Periodically check if runner is still registered and re-register if needed"""
     await asyncio.sleep(60)  # Wait 1 minute after startup
@@ -150,6 +129,35 @@ async def register_with_distributor():
     logger.error(f"Failed to register after {max_retries} retries")
     return False
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.debug(f"Starting up runner {RUNNER_ID}")
+    
+    # Start registration process in background
+    registration_task = asyncio.create_task(register_with_distributor())
+    
+    # Start periodic re-registration check
+    heartbeat_task = asyncio.create_task(periodic_registration_check())
+    
+    yield  # Server is running
+    
+    # Cleanup
+    logger.info("Cleaning up sessions...")
+    await cleanup_sessions()
+    if not registration_task.done():
+        registration_task.cancel()
+    if not heartbeat_task.done():
+        heartbeat_task.cancel()
+
+# Create the FastAPI app instance
+app = FastAPI(
+    title="ScrapeEngine Runner",
+    description="Web scraping runner service",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "runner_id": RUNNER_ID}
@@ -179,7 +187,7 @@ async def handle_ping(request: dict):
             return {
                 "status": "success",
                 "action": "re_registration_triggered",
-                "runner_id": f"runner-{os.getenv('HOSTNAME', socket.gethostname())}"
+                "runner_id": RUNNER_ID
             }
         else:
             return {"status": "unknown_action", "action": action}
@@ -187,3 +195,7 @@ async def handle_ping(request: dict):
     except Exception as e:
         logger.error(f"Error handling ping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
