@@ -2,7 +2,6 @@ from typing import Dict
 import aiohttp
 import logging
 import os
-from runner_manager import RunnerManager
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class RunnerDiscovery:
             "ping_attempts": 0
         }
         
-    async def ping_known_runners(self, runner_manager: RunnerManager) -> int:
+    async def ping_known_runners(self, runner_manager) -> int:
         """Ping all known runners to re-register"""
         if not self.known_runners:
             logger.info("No known runners to ping")
