@@ -55,7 +55,7 @@ class ProxyManager:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=1000',
+                    'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=250',
                     headers={'Authorization': f'Token {self.webshare_token}'}
                 ) as response:
                     if response.status != 200:
