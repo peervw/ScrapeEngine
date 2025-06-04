@@ -80,7 +80,7 @@ async def scrape_endpoint(
             "stealth": request.stealth,
             "cache": request.cache,
             "parse": request.parse,
-            "proxy_used": f"{proxy[0]}:{proxy[1]}",
+            "proxy_used": f"{result.get("proxy_used")}",
             "runner_used": result.get("runner_id", "unknown"),
             "content": result,
         }

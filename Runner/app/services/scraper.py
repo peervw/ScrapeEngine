@@ -169,6 +169,49 @@ async def get_proxy_from_distributor() -> Optional[Tuple[str, str, str, str]]:
         logger.warning(f"Error getting proxy from distributor: {e}")
         return None
 
+async def scrape_with_aiohttp(url: str, stealth: bool = True, max_attempts: int = 3) -> Tuple[str, Optional[str]]:
+    """Scrape with automatic proxy rotation on failure"""
+    last_exception = None
+    used_proxy = None
+    
+    for attempt in range(max_attempts):
+        try:
+            # Get a new proxy for each attempt
+            proxy = await get_proxy_from_distributor()
+            proxy_info = f"{proxy[0]}:{proxy[1]}" if proxy else "No proxy"
+            logger.info(f"Attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy_info}")
+            
+            session = await get_cached_session(proxy, stealth)
+            
+            async with session.get(
+                url,
+                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
+                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
+                allow_redirects=True,
+                max_redirects=2,
+                ssl=False,
+                compress=True
+            ) as response:
+                if response.status != 200:
+                    raise ClientError(f"HTTP {response.status}")
+                
+                content = await response.text(encoding='utf-8', errors='ignore')
+                used_proxy = proxy_info  # Store successful proxy
+                logger.info(f"Successfully scraped {url} on attempt {attempt + 1} with proxy: {proxy_info}")
+                return content, used_proxy
+                
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Attempt {attempt + 1} failed for {url}: {str(e)}")
+            
+            # Add small delay between retries
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(random.uniform(1, 3))
+    
+    # If all attempts failed, raise the last exception
+    logger.error(f"All {max_attempts} attempts failed for {url}")
+    raise last_exception
+
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
@@ -179,13 +222,14 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     start_time = datetime.now()
     
     try:
-        content = await scrape_with_aiohttp(url, stealth)
+        content, used_proxy = await scrape_with_aiohttp(url, stealth)
         method_used = 'aiohttp'
         
         result = {
             'status': 'success',
             'scrape_time': (datetime.now() - start_time).total_seconds(),
             'method': method_used,
+            'proxy_used': used_proxy  # Add the proxy that was used
         }
             
         # Handle different content return scenarios
@@ -207,45 +251,6 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
         return {
             'status': 'error',
             'error': str(e),
-            'scrape_time': (datetime.now() - start_time).total_seconds()
+            'scrape_time': (datetime.now() - start_time).total_seconds(),
+            'proxy_used': None  # No proxy was successfully used
         }
-
-async def scrape_with_aiohttp(url: str, stealth: bool = True, max_attempts: int = 3) -> str:
-    """Scrape with automatic proxy rotation on failure"""
-    last_exception = None
-    
-    for attempt in range(max_attempts):
-        try:
-            # Get a new proxy for each attempt
-            proxy = await get_proxy_from_distributor()
-            logger.info(f"Attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy[0] if proxy else 'No proxy'}")
-            
-            session = await get_cached_session(proxy, stealth)
-            
-            async with session.get(
-                url,
-                proxy=f"http://{proxy[0]}:{proxy[1]}" if proxy else None,
-                proxy_auth=aiohttp.BasicAuth(proxy[2], proxy[3]) if proxy and len(proxy) == 4 else None,
-                allow_redirects=True,
-                max_redirects=2,
-                ssl=False,
-                compress=True
-            ) as response:
-                if response.status != 200:
-                    raise ClientError(f"HTTP {response.status}")
-                
-                content = await response.text(encoding='utf-8', errors='ignore')
-                logger.info(f"Successfully scraped {url} on attempt {attempt + 1} with proxy: {proxy[0] if proxy else 'No proxy'}")
-                return content
-                
-        except Exception as e:
-            last_exception = e
-            logger.warning(f"Attempt {attempt + 1} failed for {url}: {str(e)}")
-            
-            # Add small delay between retries
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(random.uniform(1, 3))
-    
-    # If all attempts failed, raise the last exception
-    logger.error(f"All {max_attempts} attempts failed for {url}")
-    raise last_exception
