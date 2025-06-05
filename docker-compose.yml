@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     networks:
       - scrape_network
-      - backend
+      - shared_backend
 
   runner:
     build:
@@ -48,5 +48,5 @@ services:
 networks:
   scrape_network:
     driver: bridge
-  backend:
-    driver: bridge
+  shared_backend:
+    external: true
