@@ -148,7 +148,7 @@ def optional_token_required(authorization: Optional[str] = Header(None)):
     return authorization
 
 # Protected endpoints with optional authentication
-@app.post('/api/scrape')
+@app.post('/api/page')
 async def scrape_endpoint(
     request: ScrapeRequest,
     authorization: str = Depends(optional_token_required)
