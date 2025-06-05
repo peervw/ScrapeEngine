@@ -143,24 +143,29 @@ async def parse_html_fast(content: str) -> Dict[str, Any]:
     }
 
 async def get_proxy_from_distributor() -> Optional[Tuple[str, str, str, str]]:
-    """Get a proxy from the distributor service"""
+    """Get a proxy from the distributor service - works with or without authentication"""
     distributor_url = os.getenv('DISTRIBUTOR_URL', 'http://distributor:8080')
     auth_token = os.getenv('AUTH_TOKEN')
     
-    if not auth_token:
-        logger.warning("No AUTH_TOKEN found, proceeding without proxy")
-        return None
-        
     try:
+        # Prepare headers - only include auth if token is available
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+            logger.debug("Using authentication for proxy request")
+        else:
+            logger.debug("No AUTH_TOKEN set, requesting proxy without authentication")
+        
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{distributor_url}/api/proxy/next",
-                headers={"Authorization": f"Bearer {auth_token}"},
+                headers=headers,
                 timeout=5
             ) as response:
                 if response.status == 200:
                     proxy_data = await response.json()
                     # Assuming the response is a tuple/list [host, port, username, password]
+                    logger.debug(f"Received proxy from distributor: {proxy_data[0]}:{proxy_data[1]}")
                     return tuple(proxy_data)
                 else:
                     logger.warning(f"Failed to get proxy from distributor: {response.status}")

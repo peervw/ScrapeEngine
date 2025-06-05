@@ -147,6 +147,12 @@ def optional_token_required(authorization: Optional[str] = Header(None)):
     
     return authorization
 
+@app.get('/')
+async def root():
+    """Root endpoint to check if the service is running"""
+    number_of_runners = len(app.state.runner_manager.runners)
+    return {"message": f"ScrapeEngine Distributor is running with {number_of_runners} active runners."}
+
 # Protected endpoints with optional authentication
 @app.post('/page')
 async def scrape_endpoint(
