@@ -158,7 +158,7 @@ async def get_proxy_from_distributor() -> Optional[Tuple[str, str, str, str]]:
         
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{distributor_url}/api/proxy/next",
+                f"{distributor_url}/proxy/next",
                 headers=headers,
                 timeout=5
             ) as response:
