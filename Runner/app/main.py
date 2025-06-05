@@ -52,10 +52,16 @@ async def is_registered() -> bool:
         runner_id = f"runner-{container_id}"
         
         timeout = aiohttp.ClientTimeout(total=10)
+        
+        # Prepare headers - only include auth if token is available
+        headers = {}
+        if AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+        
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(
-                f"{DISTRIBUTOR_URL}runners/status",
-                headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
+                f"{DISTRIBUTOR_URL}/api/runners/status",  # Fixed URL path
+                headers=headers
             ) as response:
                 if response.status == 200:
                     runners = await response.json()
@@ -69,17 +75,19 @@ async def is_registered() -> bool:
         return False
 
 async def register_with_distributor():
-    """Modified to be callable multiple times"""
-    max_retries = 5  # Reduced for re-registration attempts
+    """Modified to work with optional authentication"""
+    max_retries = 5
     retry_count = 0
     
-    if not AUTH_TOKEN:
-        logger.error("AUTH_TOKEN environment variable is not set")
-        return False
-        
     if not DISTRIBUTOR_URL:
         logger.error("DISTRIBUTOR_URL environment variable is not set")
         return False
+    
+    # Log auth status
+    if AUTH_TOKEN:
+        logger.debug("Using authentication for distributor registration")
+    else:
+        logger.debug("No AUTH_TOKEN set, registering without authentication")
     
     while retry_count < max_retries:
         try:
@@ -99,13 +107,18 @@ async def register_with_distributor():
                 use_dns_cache=False
             )
             
+            # Prepare headers - only include auth if token is available
+            headers = {}
+            if AUTH_TOKEN:
+                headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+            
             async with aiohttp.ClientSession(
                 timeout=timeout,
                 connector=connector
             ) as session:
                 response = await session.post(
-                    f"{DISTRIBUTOR_URL}/runners/register",
-                    headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
+                    f"{DISTRIBUTOR_URL}/api/runners/register",  # Fixed URL path
+                    headers=headers,
                     json={
                         "runner_id": runner_id,
                         "url": runner_url
@@ -124,7 +137,7 @@ async def register_with_distributor():
         
         retry_count += 1
         if retry_count < max_retries:
-            await asyncio.sleep(random.uniform(2, 5))  # Shorter delays for re-registration
+            await asyncio.sleep(random.uniform(2, 5))
 
     logger.error(f"Failed to register after {max_retries} retries")
     return False
