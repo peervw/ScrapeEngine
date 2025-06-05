@@ -148,7 +148,7 @@ def optional_token_required(authorization: Optional[str] = Header(None)):
     return authorization
 
 # Protected endpoints with optional authentication
-@app.post('/api/page')
+@app.post('/page')
 async def scrape_endpoint(
     request: ScrapeRequest,
     authorization: str = Depends(optional_token_required)
@@ -181,7 +181,7 @@ async def scrape_endpoint(
         logger.error(f"Scrape error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post('/api/runners/register')
+@app.post('/runners/register')
 async def register_runner(
     request: dict,
     authorization: str = Depends(optional_token_required)
@@ -246,7 +246,7 @@ async def debug_proxies(authorization: str = Depends(optional_token_required)):
         ]
     }
 
-@app.get("/api/debug/runners")
+@app.get("/debug/runners")
 async def debug_runners(authorization: str = Depends(optional_token_required)):
     """Debug endpoint to check runner status"""
     runner_manager = app.state.runner_manager
@@ -262,7 +262,7 @@ async def debug_runners(authorization: str = Depends(optional_token_required)):
         ]
     }
 
-@app.get("/api/debug/test-scrape")
+@app.get("/debug/test-scrape")
 async def test_scrape(authorization: str = Depends(optional_token_required)):
     """Test endpoint to try a scrape operation"""
     try:
@@ -304,7 +304,7 @@ async def test_scrape(authorization: str = Depends(optional_token_required)):
             "runners_available": len(app.state.runner_manager.runners)
         }
 
-@app.get("/api/proxy/next")
+@app.get("/proxy/next")
 async def get_next_proxy(authorization: str = Depends(optional_token_required)):
     """Get the next available proxy from the proxy manager"""
     proxy = await app.state.proxy_manager.get_next_proxy()
@@ -312,12 +312,12 @@ async def get_next_proxy(authorization: str = Depends(optional_token_required)):
         raise HTTPException(status_code=503, detail="No proxies available")
     return proxy
 
-@app.get("/api/runners/status")
+@app.get("/runners/status")
 async def get_runner_status(authorization: str = Depends(optional_token_required)):
     """Get status of all registered runners"""
     return app.state.runner_manager.get_runner_status()
 
-@app.post("/api/runners/ping-all")
+@app.post("/runners/ping-all")
 async def ping_all_runners(authorization: str = Depends(optional_token_required)):
     """Manually trigger pinging of all known runners"""
     try:
