@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     networks:
       - scrape_network
+      - backend
 
   runner:
     build:
