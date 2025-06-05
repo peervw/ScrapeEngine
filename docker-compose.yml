@@ -47,3 +47,5 @@ services:
 networks:
   scrape_network:
     driver: bridge
+  backend:
+    driver: bridge
