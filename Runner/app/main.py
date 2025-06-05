@@ -60,7 +60,7 @@ async def is_registered() -> bool:
         
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(
-                f"{DISTRIBUTOR_URL}/api/runners/status",  # Fixed URL path
+                f"{DISTRIBUTOR_URL}/runners/status",  # Fixed URL path
                 headers=headers
             ) as response:
                 if response.status == 200:
@@ -117,7 +117,7 @@ async def register_with_distributor():
                 connector=connector
             ) as session:
                 response = await session.post(
-                    f"{DISTRIBUTOR_URL}/api/runners/register",  # Fixed URL path
+                    f"{DISTRIBUTOR_URL}/runners/register",  # Fixed URL path
                     headers=headers,
                     json={
                         "runner_id": runner_id,
