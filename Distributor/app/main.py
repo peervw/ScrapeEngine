@@ -15,8 +15,20 @@ from contextlib import asynccontextmanager
 setup_logging()
 logger = logging.getLogger(__name__)
 
+_auth_status_logged = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    logger.info("Starting Distributor service...")
+    
+    # Log authentication status once at startup
+    auth_token = os.getenv("AUTH_TOKEN")
+    if auth_token:
+        logger.info("Authentication enabled - AUTH_TOKEN is set")
+    else:
+        logger.info("Authentication disabled - AUTH_TOKEN not set")
+    
     # Startup
     logger.debug("Starting up distributor service...")
     try:
@@ -107,7 +119,19 @@ def verify_auth(auth_header: Optional[str]) -> bool:
     except:
         return False
 
-def token_required(authorization: Optional[str] = Header(None)):
+def optional_token_required(authorization: Optional[str] = Header(None)):
+    """Optional authentication - only required if AUTH_TOKEN is set"""
+    global _auth_status_logged
+    auth_token = os.getenv("AUTH_TOKEN")
+    
+    # If no AUTH_TOKEN is set, skip authentication
+    if not auth_token:
+        if not _auth_status_logged:
+            logger.info("AUTH_TOKEN not set - running without authentication")
+            _auth_status_logged = True
+        return None
+    
+    # If AUTH_TOKEN is set, require proper authentication
     if not authorization:
         raise HTTPException(status_code=401, detail="No authorization token provided")
     
@@ -116,18 +140,18 @@ def token_required(authorization: Optional[str] = Header(None)):
         scheme, token = authorization.split()
         if scheme.lower() != 'bearer':
             raise HTTPException(status_code=401, detail="Invalid authentication scheme")
-        if token != os.getenv("AUTH_TOKEN"):
+        if token != auth_token:
             raise HTTPException(status_code=401, detail="Invalid token")
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid token format")
     
     return authorization
 
-# Protected endpoints with authentication
+# Protected endpoints with optional authentication
 @app.post('/api/scrape')
 async def scrape_endpoint(
     request: ScrapeRequest,
-    authorization: str = Depends(token_required)
+    authorization: str = Depends(optional_token_required)
 ):
     proxy = None
     try:
@@ -160,7 +184,7 @@ async def scrape_endpoint(
 @app.post('/api/runners/register')
 async def register_runner(
     request: dict,
-    authorization: str = Depends(token_required)
+    authorization: str = Depends(optional_token_required)
 ):
     """Register a new runner with the distributor"""
     logger.info(f"Received registration request: {request}")
@@ -189,7 +213,7 @@ async def register_runner(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
-async def health_check(authorization: str = Depends(token_required)):
+async def health_check(authorization: str = Depends(optional_token_required)):
     return {
         "status": "healthy",
         "version": "1.0.0",
@@ -206,7 +230,7 @@ async def public_health_check():
     }
 
 @app.get("/api/debug/proxies")
-async def debug_proxies(authorization: str = Depends(token_required)):
+async def debug_proxies(authorization: str = Depends(optional_token_required)):
     """Debug endpoint to check proxy status"""
     proxy_manager = app.state.proxy_manager
     return {
@@ -223,7 +247,7 @@ async def debug_proxies(authorization: str = Depends(token_required)):
     }
 
 @app.get("/api/debug/runners")
-async def debug_runners(authorization: str = Depends(token_required)):
+async def debug_runners(authorization: str = Depends(optional_token_required)):
     """Debug endpoint to check runner status"""
     runner_manager = app.state.runner_manager
     return {
@@ -239,7 +263,7 @@ async def debug_runners(authorization: str = Depends(token_required)):
     }
 
 @app.get("/api/debug/test-scrape")
-async def test_scrape(authorization: str = Depends(token_required)):
+async def test_scrape(authorization: str = Depends(optional_token_required)):
     """Test endpoint to try a scrape operation"""
     try:
         logger.info("Starting test scrape")
@@ -281,7 +305,7 @@ async def test_scrape(authorization: str = Depends(token_required)):
         }
 
 @app.get("/api/proxy/next")
-async def get_next_proxy():
+async def get_next_proxy(authorization: str = Depends(optional_token_required)):
     """Get the next available proxy from the proxy manager"""
     proxy = await app.state.proxy_manager.get_next_proxy()
     if not proxy:
@@ -289,12 +313,12 @@ async def get_next_proxy():
     return proxy
 
 @app.get("/api/runners/status")
-async def get_runner_status(authorization: str = Depends(token_required)):
+async def get_runner_status(authorization: str = Depends(optional_token_required)):
     """Get status of all registered runners"""
     return app.state.runner_manager.get_runner_status()
 
 @app.post("/api/runners/ping-all")
-async def ping_all_runners(authorization: str = Depends(token_required)):
+async def ping_all_runners(authorization: str = Depends(optional_token_required)):
     """Manually trigger pinging of all known runners"""
     try:
         pinged = await app.state.runner_discovery.ping_known_runners(app.state.runner_manager)
