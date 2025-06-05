@@ -54,7 +54,7 @@ async def is_registered() -> bool:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(
-                f"{DISTRIBUTOR_URL}/api/runners/status",
+                f"{DISTRIBUTOR_URL}runners/status",
                 headers={"Authorization": f"Bearer {AUTH_TOKEN}"}
             ) as response:
                 if response.status == 200:
@@ -104,7 +104,7 @@ async def register_with_distributor():
                 connector=connector
             ) as session:
                 response = await session.post(
-                    f"{DISTRIBUTOR_URL}/api/runners/register",
+                    f"{DISTRIBUTOR_URL}/runners/register",
                     headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
                     json={
                         "runner_id": runner_id,
@@ -171,7 +171,7 @@ async def scrape_endpoint(request: ScrapeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/ping")
+@app.post("/ping")
 async def handle_ping(request: dict):
     """Handle ping from distributor to trigger re-registration"""
     try:

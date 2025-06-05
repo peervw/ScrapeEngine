@@ -229,7 +229,7 @@ async def public_health_check():
         "version": "1.0.0"
     }
 
-@app.get("/api/debug/proxies")
+@app.get("/debug/proxies")
 async def debug_proxies(authorization: str = Depends(optional_token_required)):
     """Debug endpoint to check proxy status"""
     proxy_manager = app.state.proxy_manager
