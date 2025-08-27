@@ -253,13 +253,6 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     except Exception as e:
         logger.error(f"URL sanitization error: {e}")
         raise ValueError(f"Invalid URL format: {url}")
-    
-    for attempt in range(max_attempts):
-        try:
-            # Get a new proxy for each attempt
-            proxy = await get_proxy_from_distributor()
-            proxy_info = f"{proxy[0]}:{proxy[1]}" if proxy else "No proxy"
-            logger.info(f"Playwright attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy_info}")
             
     for attempt in range(max_attempts):
         try:
