@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 import ssl
 import os
+import base64
 
 # Initialize uvloop for better performance on macOS/Linux
 try:
@@ -217,18 +218,114 @@ async def scrape_with_aiohttp(url: str, stealth: bool = True, max_attempts: int 
     logger.error(f"All {max_attempts} attempts failed for {url}")
     raise last_exception
 
+async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: int = 3) -> Tuple[str, Optional[str]]:
+    """Scrape with Playwright for JavaScript rendering with automatic proxy rotation"""
+    last_exception = None
+    used_proxy = None
+    
+    for attempt in range(max_attempts):
+        try:
+            # Get a new proxy for each attempt
+            proxy = await get_proxy_from_distributor()
+            proxy_info = f"{proxy[0]}:{proxy[1]}" if proxy else "No proxy"
+            logger.info(f"Playwright attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy_info}")
+            
+            async with async_playwright() as p:
+                # Launch browser with stealth settings
+                browser_args = [
+                    '--no-sandbox',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor'
+                ]
+                
+                if proxy:
+                    browser_args.append(f'--proxy-server=http://{proxy[0]}:{proxy[1]}')
+                
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=browser_args
+                )
+                
+                context = await browser.new_context(
+                    user_agent=random.choice(USER_AGENTS) if stealth else None,
+                    viewport={'width': 1920, 'height': 1080},
+                    ignore_https_errors=True,
+                    extra_http_headers={
+                        'Accept-Language': f"{random.choice(['en-US', 'en-GB', 'en-CA'])},en;q=0.9" if stealth else 'en-US,en;q=0.9'
+                    } if stealth else {}
+                )
+                
+                # Set proxy authentication if available
+                if proxy and len(proxy) == 4:
+                    await context.set_extra_http_headers({
+                        'Proxy-Authorization': f'Basic {base64.b64encode(f"{proxy[2]}:{proxy[3]}".encode()).decode()}'
+                    })
+                
+                page = await context.new_page()
+                
+                # Add stealth scripts
+                if stealth:
+                    await page.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {
+                            get: () => undefined,
+                        });
+                        Object.defineProperty(navigator, 'plugins', {
+                            get: () => [1, 2, 3, 4, 5],
+                        });
+                        Object.defineProperty(navigator, 'languages', {
+                            get: () => ['en-US', 'en'],
+                        });
+                    """)
+                
+                # Navigate to URL and wait for network idle (JavaScript rendering)
+                response = await page.goto(url, wait_until='networkidle', timeout=30000)
+                
+                if response and response.status != 200:
+                    raise Exception(f"HTTP {response.status}")
+                
+                # Wait a bit more for any remaining JavaScript to execute
+                await page.wait_for_timeout(1000)
+                
+                # Get the rendered HTML content (after JavaScript execution)
+                content = await page.content()
+                used_proxy = proxy_info
+                
+                await browser.close()
+                
+                logger.info(f"Successfully scraped {url} with Playwright on attempt {attempt + 1} using proxy: {proxy_info}")
+                return content, used_proxy
+                
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Playwright attempt {attempt + 1} failed for {url}: {str(e)}")
+            
+            # Add small delay between retries
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(random.uniform(1, 3))
+    
+    # If all attempts failed, raise the last exception
+    logger.error(f"All {max_attempts} Playwright attempts failed for {url}")
+    raise last_exception
+
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
         
     stealth = task_data.get('stealth', False)
     should_parse = task_data.get('parse', True)
+    method = task_data.get('method', 'aiohttp')
     
     start_time = datetime.now()
     
     try:
-        content, used_proxy = await scrape_with_aiohttp(url, stealth)
-        method_used = 'aiohttp'
+        # Choose scraping method based on request
+        if method == 'playwright':
+            content, used_proxy = await scrape_with_playwright(url, stealth)
+            method_used = 'playwright'
+        else:
+            content, used_proxy = await scrape_with_aiohttp(url, stealth)
+            method_used = 'aiohttp'
         
         result = {
             'status': 'success',

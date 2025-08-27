@@ -86,12 +86,17 @@ Authorization: Bearer <AUTH_TOKEN>
 ```json
 {
     "url": "https://example.com",
-    "full_content": "yes",
+    "full_content": true,
     "stealth": true,
-    "method": "simple",
-    "cache": true
+    "method": "aiohttp",
+    "cache": true,
+    "parse": true
 }
 ```
+
+  **Method Options:**
+  - `"aiohttp"` - Fast HTTP-only scraping for static content
+  - `"playwright"` - JavaScript rendering for dynamic content (returns rendered page after JS execution)
 
 - **GET** `/health/public`
   - Public health check endpoint
