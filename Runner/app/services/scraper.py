@@ -223,6 +223,8 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     last_exception = None
     used_proxy = None
     
+    url = url.strip()
+    
     for attempt in range(max_attempts):
         try:
             # Get a new proxy for each attempt
