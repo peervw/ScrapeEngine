@@ -218,7 +218,8 @@ async def scrape_with_aiohttp(url: str, stealth: bool = True, max_attempts: int 
     logger.error(f"All {max_attempts} attempts failed for {url}")
     raise last_exception
 
-async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: int = 3) -> Tuple[str, Optional[str]]:
+async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: int = 3, 
+                                infinite_scroll: bool = False, scroll_count: int = 5) -> Tuple[str, Optional[str]]:
     """Scrape with Playwright for JavaScript rendering with automatic proxy rotation"""
     last_exception = None
     used_proxy = None
@@ -306,15 +307,49 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
                             });
                         """)
                     
-                    # Try with different wait_until strategy
+                    # Wait until the network is idle to ensure page is fully loaded
                     logger.info(f"Navigating to {url} via proxy")
-                    response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                    response = await page.goto(url, wait_until='networkidle', timeout=45000)
                     
                     if response and response.status != 200:
                         raise Exception(f"HTTP {response.status}")
                     
-                    # Wait a bit more for any remaining JavaScript to execute
-                    await page.wait_for_timeout(1000)
+                    # Wait for all content to be visible
+                    await page.wait_for_timeout(2000)
+                    
+                    # Handle infinite scroll if enabled
+                    if infinite_scroll:
+                        logger.info(f"Performing infinite scroll on {url}")
+                        
+                        # Get initial page height
+                        prev_height = await page.evaluate("document.body.scrollHeight")
+                        
+                        # Scroll down to trigger content loading, with max_scrolls as safety
+                        max_scrolls = scroll_count
+                        scrolls_without_change = 0
+                        for i in range(max_scrolls):
+                            # Scroll to bottom
+                            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            
+                            # Wait for potential new content to load
+                            await page.wait_for_timeout(1500)
+                            
+                            # Get new height
+                            new_height = await page.evaluate("document.body.scrollHeight")
+                            
+                            logger.info(f"Scroll {i+1}/{max_scrolls}: Height changed from {prev_height} to {new_height}")
+                            
+                            # If height didn't change, page might be fully loaded
+                            if new_height == prev_height:
+                                scrolls_without_change += 1
+                                # Stop if no changes for 2 consecutive scrolls
+                                if scrolls_without_change >= 2:
+                                    logger.info("No new content detected after scrolling, stopping")
+                                    break
+                            else:
+                                scrolls_without_change = 0
+                                
+                            prev_height = new_height
                     
                     # Get the rendered HTML content
                     content = await page.content()
@@ -341,6 +376,7 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     # If all attempts failed, raise the last exception
     logger.error(f"All {max_attempts} Playwright attempts failed for {url}")
     raise last_exception
+
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
@@ -349,12 +385,22 @@ async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     should_parse = task_data.get('parse', True)
     method = task_data.get('method', 'aiohttp')
     
+    # New options for infinite scroll
+    infinite_scroll = task_data.get('infinite_scroll', False)
+    scroll_count = task_data.get('scroll_count', 5)
+    
     start_time = datetime.now()
     
     try:
         # Choose scraping method based on request
         if method == 'playwright':
-            content, used_proxy = await scrape_with_playwright(url, stealth)
+            content, used_proxy = await scrape_with_playwright(
+                url, 
+                stealth,
+                max_attempts=3,
+                infinite_scroll=infinite_scroll,
+                scroll_count=scroll_count
+            )
             method_used = 'playwright'
         else:
             content, used_proxy = await scrape_with_aiohttp(url, stealth)
