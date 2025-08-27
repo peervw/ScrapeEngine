@@ -261,71 +261,81 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
             proxy_info = f"{proxy[0]}:{proxy[1]}" if proxy else "No proxy"
             logger.info(f"Playwright attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy_info}")
             
-            async with async_playwright() as p:
-                # Launch browser with stealth settings
-                browser_args = [
-                    '--no-sandbox',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor'
-                ]
+    for attempt in range(max_attempts):
+        try:
+            # Get a new proxy for each attempt
+            proxy = await get_proxy_from_distributor()
+            
+            if not proxy or len(proxy) < 2:
+                logger.warning(f"Invalid proxy received: {proxy}")
+                continue
                 
+            proxy_info = f"{proxy[0]}:{proxy[1]}" if proxy else "No proxy"
+            logger.info(f"Playwright attempt {attempt + 1}/{max_attempts} for {url} using proxy: {proxy_info}")
+            
+            async with async_playwright() as p:
+                # Create a proxy configuration object instead of using command-line args
+                proxy_config = None
                 if proxy:
-                    browser_args.append(f'--proxy-server=http://{proxy[0]}:{proxy[1]}')
+                    proxy_config = {
+                        "server": f"http://{proxy[0]}:{proxy[1]}",
+                    }
+                    # Add authentication if available
+                    if len(proxy) >= 4:
+                        proxy_config["username"] = proxy[2]
+                        proxy_config["password"] = proxy[3]
                 
                 browser = await p.chromium.launch(
                     headless=True,
-                    args=browser_args
+                    args=['--no-sandbox']
                 )
                 
-                context = await browser.new_context(
-                    user_agent=random.choice(USER_AGENTS) if stealth else None,
-                    viewport={'width': 1920, 'height': 1080},
-                    ignore_https_errors=True,
-                    extra_http_headers={
-                        'Accept-Language': f"{random.choice(['en-US', 'en-GB', 'en-CA'])},en;q=0.9" if stealth else 'en-US,en;q=0.9'
-                    } if stealth else {}
-                )
+                try:
+                    # Set proxy in context options
+                    context_options = {
+                        "user_agent": random.choice(USER_AGENTS) if stealth else None,
+                        "viewport": {'width': 1920, 'height': 1080},
+                        "ignore_https_errors": True
+                    }
+                    
+                    if proxy_config:
+                        context_options["proxy"] = proxy_config
+                    
+                    context = await browser.new_context(**context_options)
+                    
+                    page = await context.new_page()
+                    
+                    # Add stealth scripts
+                    if stealth:
+                        await page.add_init_script("""
+                            Object.defineProperty(navigator, 'webdriver', {
+                                get: () => undefined,
+                            });
+                        """)
+                    
+                    # Try with different wait_until strategy
+                    logger.info(f"Navigating to {url} via proxy")
+                    response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                    
+                    if response and response.status != 200:
+                        raise Exception(f"HTTP {response.status}")
+                    
+                    # Wait a bit more for any remaining JavaScript to execute
+                    await page.wait_for_timeout(1000)
+                    
+                    # Get the rendered HTML content
+                    content = await page.content()
+                    used_proxy = proxy_info
+                    
+                    logger.info(f"Successfully scraped {url} with Playwright on attempt {attempt + 1} using proxy: {proxy_info}")
+                    return content, used_proxy
                 
-                # Set proxy authentication if available
-                if proxy and len(proxy) == 4:
-                    await context.set_extra_http_headers({
-                        'Proxy-Authorization': f'Basic {base64.b64encode(f"{proxy[2]}:{proxy[3]}".encode()).decode()}'
-                    })
-                
-                page = await context.new_page()
-                
-                # Add stealth scripts
-                if stealth:
-                    await page.add_init_script("""
-                        Object.defineProperty(navigator, 'webdriver', {
-                            get: () => undefined,
-                        });
-                        Object.defineProperty(navigator, 'plugins', {
-                            get: () => [1, 2, 3, 4, 5],
-                        });
-                        Object.defineProperty(navigator, 'languages', {
-                            get: () => ['en-US', 'en'],
-                        });
-                    """)
-                
-                # Navigate to URL and wait for network idle (JavaScript rendering)
-                response = await page.goto(url, wait_until='networkidle', timeout=30000)
-                
-                if response and response.status != 200:
-                    raise Exception(f"HTTP {response.status}")
-                
-                # Wait a bit more for any remaining JavaScript to execute
-                await page.wait_for_timeout(1000)
-                
-                # Get the rendered HTML content (after JavaScript execution)
-                content = await page.content()
-                used_proxy = proxy_info
-                
-                await browser.close()
-                
-                logger.info(f"Successfully scraped {url} with Playwright on attempt {attempt + 1} using proxy: {proxy_info}")
-                return content, used_proxy
+                except Exception as page_error:
+                    logger.warning(f"Navigation failed: {page_error}")
+                    raise page_error
+                    
+                finally:
+                    await browser.close()
                 
         except Exception as e:
             last_exception = e
@@ -338,7 +348,6 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     # If all attempts failed, raise the last exception
     logger.error(f"All {max_attempts} Playwright attempts failed for {url}")
     raise last_exception
-
 async def scrape(task_data: Dict[str, Any]) -> Dict[str, Any]:
     """Optimized main scrape function with optional parsing"""
     url = str(task_data['url'])
