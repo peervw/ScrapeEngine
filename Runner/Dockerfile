@@ -9,6 +9,8 @@ RUN apt-get update && \
     iputils-ping \
     dnsutils \
     net-tools \
+    fonts-unifont \
+    fonts-ubuntu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
