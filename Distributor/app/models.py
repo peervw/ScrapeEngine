@@ -8,6 +8,8 @@ class ScrapeRequest(BaseModel):
     stealth: Optional[bool] = False
     cache: Optional[bool] = True
     parse: Optional[bool] = True
+    infinite_scroll: Optional[bool] = False
+    scroll_count: Optional[int] = 5
 
 class ScrapeResponse(BaseModel):
     url: str
@@ -18,4 +20,6 @@ class ScrapeResponse(BaseModel):
     parse: bool
     proxy_used: str
     runner_used: str
+    infinite_scroll: Optional[bool] = False
+    scroll_count: Optional[int] = 5
     content: dict
