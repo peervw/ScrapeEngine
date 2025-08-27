@@ -223,9 +223,36 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     last_exception = None
     used_proxy = None
     
-    import re
-    url = re.sub(r"\s+", "", url)
-    url = url.strip()
+    # More thorough URL sanitization
+    try:
+        # Remove all whitespace and control characters
+        import re
+        url = re.sub(r"\s+", "", url)
+        url = url.strip()
+        
+        # Ensure URL has proper scheme
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            
+        # URL encode any problematic characters but preserve the basic URL structure
+        from urllib.parse import urlparse, urlunparse, quote
+        parsed = urlparse(url)
+        path = quote(parsed.path)
+        # Keep the query parameters as is but ensure they're properly formatted
+        query = parsed.query
+        url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            parsed.params,
+            query,
+            parsed.fragment
+        ))
+        
+        logger.info(f"Sanitized URL: {url}")
+    except Exception as e:
+        logger.error(f"URL sanitization error: {e}")
+        raise ValueError(f"Invalid URL format: {url}")
     
     for attempt in range(max_attempts):
         try:
