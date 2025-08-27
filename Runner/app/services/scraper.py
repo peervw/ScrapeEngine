@@ -223,10 +223,6 @@ async def scrape_with_playwright(url: str, stealth: bool = True, max_attempts: i
     last_exception = None
     used_proxy = None
     
-    import re
-    url = re.sub(r"\s+", "", url)
-
-    
     url = url.strip()
     
     for attempt in range(max_attempts):
