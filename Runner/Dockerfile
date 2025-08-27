@@ -10,7 +10,6 @@ RUN apt-get update && \
     dnsutils \
     net-tools \
     fonts-unifont \
-    fonts-ubuntu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
